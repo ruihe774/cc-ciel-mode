@@ -1,0 +1,47 @@
+{
+  "name": "code-mode",
+  "displayName": "code-mode",
+  "version": "0.1.0",
+  "description": "Code Mode for Claude Code: the model writes a small sandboxed CEL program that calls MCP and read-only tools, filters and joins their results, and returns only what it needs, so large tool outputs never fill the context. Every call still goes through the permission checks.",
+  "author": {
+    "name": "Rui He",
+    "email": "ruihe774@outlook.com"
+  },
+  "license": "Unlicense AND MIT",
+  "keywords": ["code-mode", "mcp", "cel", "programmatic-tool-calling", "context", "sandbox", "mod"],
+  "userConfig": {
+    "tools": {
+      "type": "string",
+      "title": "Callable tools",
+      "description": "A regex over full tool names: the tools a program may call. Empty means the default, every MCP tool plus Read, Glob, Grep, WebFetch and WebSearch. code-mode's own tools are never callable.",
+      "default": "^(mcp__.+|Read|Glob|Grep|WebFetch|WebSearch)$"
+    },
+    "deny_direct": {
+      "type": "boolean",
+      "title": "Route MCP calls through programs",
+      "description": "Deny Claude's direct calls to callable MCP tools and point it to the run tool. Calls a program makes still pass.",
+      "default": false
+    },
+    "max_calls": {
+      "type": "number",
+      "title": "Tool calls per program",
+      "description": "A program making more tool calls than this is stopped.",
+      "default": 100,
+      "min": 1
+    },
+    "concurrency": {
+      "type": "number",
+      "title": "Parallel calls",
+      "description": "How many calls callEach runs at once.",
+      "default": 8,
+      "min": 1
+    },
+    "max_output": {
+      "type": "number",
+      "title": "Result size",
+      "description": "Characters of a program's result that Claude reads; the rest is cut with a note.",
+      "default": 20000,
+      "min": 100
+    }
+  }
+}
