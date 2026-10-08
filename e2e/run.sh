@@ -3,6 +3,7 @@
 #
 #   e2e/run.sh            deterministic checks (/code-mode, no model turns) and model checks
 #   e2e/run.sh quick      deterministic checks only
+#   QUESTIONS="3" e2e/run.sh   only these of the model questions (1 2 3)
 #
 # Model checks use claude-haiku-5-5 and print each run's input tokens beside a baseline run
 # without code-mode, so the saving can be read off. Needs claude signed in; costs cents.
@@ -108,11 +109,13 @@ expect "deny_direct: the call then succeeds from a program" direct '176'
 
 Q1='The mock MCP server is an issue tracker. Among open issues last updated before 2026-01-01, how many are there, and which 3 labels are most common (with counts)? Answer in one line.'
 Q2='The mock MCP server is an issue tracker. Take the 5 open issues with the most comments (ties: lower number first). For each, who commented in its thread (get_issue shows the thread)? One line per issue: number: names.'
-A1='90.*docs.*24.*feature.*20.*ui.*19'
+A1='(?i)90.*docs.*24.*feature.*20.*ui.*19'
 # Each issue's line names its commenters, in any order
 line() { local n=$1; shift; printf '^\\W*%s\\b' "$n"; for w in "$@"; do printf '(?=[^\\n]*\\b%s\\b)' "$w"; done; }
-A2="(?m)$(line 127 guido ada linus grace).*$(line 142 margaret guido ada linus).*$(line 50 grace ken barbara).*$(line 98 grace ken barbara).*$(line 104 ada linus grace)"
-for q in 1 2; do
+A2="(?mi)$(line 127 guido ada linus grace).*$(line 142 margaret guido ada linus).*$(line 50 grace ken barbara).*$(line 98 grace ken barbara).*$(line 104 ada linus grace)"
+Q3='The mock MCP server is an issue tracker. Fetch issues 1 through 40 with get_issue_full, which returns every comment with its author (`by`). Across those 40 threads, which 3 people wrote the most comments, and how many each? Answer in one line.'
+A3='(?i)grace\D+110.*dennis\D+108.*guido\D+105'
+for q in ${QUESTIONS:-1 2 3}; do
   eval "Q=\$Q$q A=\$A$q"
   run q$q-base "$Q" --no-mod --allowedTools 'mcp__mock__*' Read Bash &
   run q$q-mod "$Q" "${ALLOW[@]}" &

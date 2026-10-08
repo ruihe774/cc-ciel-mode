@@ -48,18 +48,25 @@ let details = callEach("mcp__github__get_issue", top.map(i, {"owner": "o", "repo
 
 Set them in `/plugin`, or under `pluginConfigs` in your settings.
 
-**Turn on `deny_direct` if Claude keeps calling the tools directly.** By default Claude chooses, and smaller models often call a big tool directly once first, which brings the output (or Claude Code's file notice for it) into the context and costs turns. In our measurements below, `deny_direct` was what made the difference.
+**Try `deny_direct` if Claude keeps calling the tools directly.** By default Claude chooses, and smaller models often call a big tool directly once first, which brings its output (or Claude Code's notice that it saved the output to a file) into the context and costs a turn.
 
 ## Measured
 
-`e2e/run.sh` asks claude-haiku-5-5 two questions about a mock issue tracker (300 issues, about 130 KB as JSON) three ways: without code-mode, with it, and with it and `deny_direct`. All runs answered correctly. Input tokens, summed over the run's turns (one run each, so expect noise):
+`e2e/run.sh` asks claude-haiku-5-5 three questions about a mock issue tracker (300 issues) three ways: without code-mode, with it, and with it and `deny_direct`. Every answer was correct. (One baseline run ranked Q2's issues by number, not by comment count, and was counted as failed.) Input tokens summed over each run's requests, for three runs:
 
 | Question | Without code-mode | code-mode | code-mode + `deny_direct` |
 | --- | --- | --- | --- |
-| Count open stale issues and their top labels | MEASURE_Q1_BASE | MEASURE_Q1_MOD | MEASURE_Q1_DENY |
-| Top 5 issues by comments, then each one's commenters (fan-out) | MEASURE_Q2_BASE | MEASURE_Q2_MOD | MEASURE_Q2_DENY |
+| Q1: count open stale issues and their top labels (one 81 KB list) | 74k, 74k, 74k | 57k, 79k, 100k | 97k, 97k, 117k |
+| Q2: top 5 issues by comments, then each one's commenters (list + 5 calls) | 95k, 116k, 119k | 123k, 225k, 267k | 159k, 162k, 237k |
+| Q3: top 3 commenters across 40 full threads (40 calls, 115 KB in all) | 96k, 96k, 96k | 77k, 77k, 162k | 77k, 78k, 98k |
 
-Without code-mode, Claude Code saves the oversized output to a file and Claude reads it back with Bash and Python, which works, but as an unsandboxed script. Most of each turn's input is Claude Code's own system prompt and tools, so the turn count dominates; code-mode saves the most when Claude writes one program that does the whole job, as it does with `deny_direct` on.
+What this shows:
+
+- **code-mode saves tokens when the data would otherwise land in the context.** In Q3 each output is under Claude Code's size limits, so without code-mode all 115 KB is read inline. One program reads it instead, about 20% less here. In a longer session the saving grows, since data in the context is re-read on every later request.
+- **It costs tokens when the data would not have landed anyway.** Claude Code already saves an output over its size limit to a file. In Q1 and Q2 the baseline read that file with one Bash+Python command, which works but runs an unsandboxed script. Most of each request is Claude Code's own system prompt and tools, so every extra request costs as much as the data saved. Haiku often needs two or three attempts to get a CEL program right, and those extra requests outweigh the saving.
+- **`deny_direct` makes runs consistent when the task suits code-mode** (Q3). On the other tasks it adds the refused first call.
+
+A stronger model writes the program right the first time more often. The error hints and the lambda forms (`sortBy(x, key)`) were added for the mistakes Haiku made in these runs.
 
 ## Safety
 

@@ -47,6 +47,19 @@ const TOOLS = {
       return text(JSON.stringify({ ...x, thread: Array.from({ length: x.comments % 5 }, (_, k) => ({ by: AUTHORS[(x.number + k) % AUTHORS.length], text: `comment ${k} on #${x.number}` })) }))
     },
   },
+  get_issue_full: {
+    description: 'Get one issue by number with its whole comment thread: every comment, with its author (`by`) and text.',
+    inputSchema: { type: 'object', properties: { number: { type: 'integer' } }, required: ['number'] },
+    run: (a) => {
+      const x = ISSUES.find((i) => i.number === a.number)
+      if (!x) return { ...text(`no issue #${a.number}`), isError: true }
+      const thread = Array.from({ length: x.comments }, (_, k) => ({
+        by: AUTHORS[(x.number * 7 + k * 3 + (k >> 2)) % AUTHORS.length],
+        text: `comment ${k} on #${x.number}: ` + Array.from({ length: 12 }, (_, w) => WORDS[(x.number + k * 5 + w * 3) % WORDS.length]).join(' '),
+      }))
+      return text(JSON.stringify({ ...x, thread }))
+    },
+  },
   stats: {
     description: 'Tracker statistics as structured content.',
     inputSchema: { type: 'object', properties: {} },

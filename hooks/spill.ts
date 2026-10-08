@@ -11,10 +11,10 @@ const NOTICES = [
 ]
 
 /** The file a spill notice names, when `text` is one and the file is where Claude Code
- *  keeps spilled results: a tool-results folder of a session under
- *  `<configDir>/projects/`. A tool can't point the host at any other file by returning
- *  text that looks like a notice. */
-export function spilledFile(text: string, configDir: string): string | undefined {
+ *  keeps spilled results: this session's tool-results folder under
+ *  `<configDir>/projects/<project>/`. A tool can't point the host at any other file by
+ *  returning text that looks like a notice. */
+export function spilledFile(text: string, configDir: string, sessionId: string): string | undefined {
   let path: string | undefined
   for (const re of NOTICES) path ??= re.exec(text)?.[1]
   if (!path) return undefined
@@ -22,7 +22,7 @@ export function spilledFile(text: string, configDir: string): string | undefined
   if (!path.startsWith(projects) || path.split('/').some((p) => p === '..' || p === '.')) return undefined
   const rest = path.slice(projects.length).split('/')
   // <project>/<session>/tool-results/<file>
-  if (rest.length !== 4 || rest[2] !== 'tool-results' || rest.some((p) => !p)) return undefined
+  if (rest.length !== 4 || rest[1] !== sessionId || rest[2] !== 'tool-results' || rest.some((p) => !p)) return undefined
   return path
 }
 

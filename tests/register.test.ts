@@ -8,6 +8,7 @@ const SPILL_DIR = '/home/u/.claude/projects/-proj/sess-1/tool-results'
 // Stubs Claude Code beneath the mod: the tools a program calls, and what they answer
 function stubEngine(on: any, seen: { tool: string; args: Record<string, unknown> }[] = [], files: Record<string, string> = {}) {
   mock.env(on, { HOME: '/home/u' })
+  on('session.id', () => ({ value: 'sess-1' }))
   on('fs.read', (_$: any, e: any) => (e.path in files ? { value: files[e.path] } : { deny: `ENOENT: ${e.path}` }))
   on('tool.list', () => ({
     value: [

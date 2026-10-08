@@ -8,13 +8,13 @@ const persisted = (path: string) => `<persisted-output>\nOutput too large (80.9K
 test('both notices name the file Claude Code saved the output to', () => {
   const txt = `${DIR}/projects/-proj/0a1b/tool-results/mcp-mock-list_issues-17915.txt`
   const json = `${DIR}/projects/-proj/0a1b/tool-results/toolu_plugin_e621.json`
-  expect(spilledFile(notice(txt), DIR)).toBe(txt)
-  expect(spilledFile(`Error: ${notice(txt)}`, DIR)).toBe(txt)
-  expect(spilledFile(persisted(json), DIR)).toBe(json)
-  expect(spilledFile(persisted(json), `${DIR}/`)).toBe(json)
+  expect(spilledFile(notice(txt), DIR, '0a1b')).toBe(txt)
+  expect(spilledFile(`Error: ${notice(txt)}`, DIR, '0a1b')).toBe(txt)
+  expect(spilledFile(persisted(json), DIR, '0a1b')).toBe(json)
+  expect(spilledFile(persisted(json), `${DIR}/`, '0a1b')).toBe(json)
 })
 
-test('only files in a tool-results folder under the config dir are followed', () => {
+test("only files in this session's tool-results folder are followed", () => {
   for (const path of [
     '/home/u/.ssh/id_rsa',
     `${DIR}/settings.json`,
@@ -23,11 +23,13 @@ test('only files in a tool-results folder under the config dir are followed', ()
     `${DIR}/projects/-proj/tool-results/x.txt`,
     `${DIR}/projects/-proj/0a1b/tool-results/deeper/x.txt`,
     `/elsewhere/.claude/projects/-proj/0a1b/tool-results/x.txt`,
+    // Another session's results
+    `${DIR}/projects/-proj/9f9f/tool-results/x.txt`,
   ])
-    expect(spilledFile(notice(path), DIR)).toBeUndefined()
+    expect(spilledFile(notice(path), DIR, '0a1b')).toBeUndefined()
   // Text that only mentions a notice is not one
-  expect(spilledFile(`see: ${notice(`${DIR}/projects/p/s/tool-results/x.txt`)}`, DIR)).toBeUndefined()
-  expect(spilledFile('[{"a": 1}]', DIR)).toBeUndefined()
+  expect(spilledFile(`see: ${notice(`${DIR}/projects/p/0a1b/tool-results/x.txt`)}`, DIR, '0a1b')).toBeUndefined()
+  expect(spilledFile('[{"a": 1}]', DIR, '0a1b')).toBeUndefined()
 })
 
 test('a saved list of content blocks reads back as their text', () => {

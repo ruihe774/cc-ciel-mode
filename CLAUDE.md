@@ -13,7 +13,7 @@ A Claude Mod (v2.1.287+) that adds Code Mode: Claude writes a small CEL program 
 - `hooks/spill.ts`: pure. Recognizes Claude Code's "output saved to a file" notices and checks the path
 - `hooks/vendor/cel/`: cel-js 8.0.0, vendored; don't edit (see THIRD_PARTY_NOTICES.md to rebuild)
 - `tests/*.test.ts`: run with `claude plugin test`
-- `e2e/mock-mcp.mjs`: a stdio MCP server with deterministic data (300 issues); `e2e/run.sh`: end-to-end checks
+- `e2e/mock-mcp.mjs`: a stdio MCP server with deterministic data (300 issues; `list_issues` about 131 KB, `get_issue`, `get_issue_full` with whole threads, `stats`, `echo_text`, `fail`); `e2e/run.sh`: end-to-end checks
 
 ## Conventions
 
@@ -35,6 +35,7 @@ A Claude Mod (v2.1.287+) that adds Code Mode: Claude writes a small CEL program 
 - `$.mcp.call(server, tool, args)` reaches any connected server with no permission prompt ("the plugin's call is the grant"), so it is not used: it would bypass permissions and other mods' `tool.call` hooks.
 - cel-js awaits async function handlers, including inside `map`/`filter` macros (one at a time), so `call()` works anywhere in an expression. `callEach` is the parallel form.
 - CEL CPU cost is small: a filter and map over 10k issues takes about 20 ms, far under a hook's 10 s budget, and time inside `$.tool.call` doesn't count anyway.
+- Measuring (see README): the result's `num_turns` counts tool calls, not requests (40 parallel calls in one request are 40 turns), and `usage` sums every request. Most of each request is Claude Code's own prompt (about 18k tokens), so code-mode saves only when the data it keeps out would otherwise be read inline. Claude Code already keeps an over-limit output out (it saves it to a file), so a single huge output is not the case to test; many medium outputs are.
 - With claude-haiku-5-5, Claude tends to call a big MCP tool directly first, see Claude Code's file notice (whose preview shows content blocks), and then index `call()` output as blocks (`raw[0].text`). The error hints in `program.ts` (`HINTS`) target exactly these mistakes. With `deny_direct` on, it writes one program from the start. Haiku also reaches for lambda forms (`sortBy(x, key)`), hence the desugaring.
 
 ## Verifying changes
@@ -51,6 +52,7 @@ A Claude Mod (v2.1.287+) that adds Code Mode: Claude writes a small CEL program 
 - MCP: `--mcp-config <file> --strict-mcp-config` with `{"mcpServers":{"mock":{"command":"node","args":["<repo>/e2e/mock-mcp.mjs"]}}}`. `MOCK_EXTRA_TOOLS=N` in its `env` adds filler tools.
 - Plugin options for one run: `--settings '{"pluginConfigs":{"code-mode@inline":{"options":{"deny_direct":true}}}}'`.
 - `--output-format stream-json --verbose` gives every tool call and result; the last `"type":"result"` line has `usage` and `num_turns`.
+- Waiting on background runs: don't loop on `pgrep -f <script>`, which matches its own command line and never ends. Run them in the foreground with `&` and `wait`, or have each write a marker line when it finishes.
 - `--debug-file <log>`: hook load errors and core's debug lines. `$.ui.log(..., { to: 'debug' })` from this module does not show there (it loads in a worker environment); return debug text in a tool result instead.
 - Interactive runs (needed only to regenerate types): tmux, `tmux new-session -d -x 200 -y 50 -c <workdir> "<clean env> claude --model claude-haiku-5-5 --plugin-dir <repo>"`, a fresh scratch workdir, then the theme picker and security notes (`C-m` each) and the folder-trust prompt (`Down`, `C-m`). Submit text with `send-keys -l`, a pause, then `C-m`.
 

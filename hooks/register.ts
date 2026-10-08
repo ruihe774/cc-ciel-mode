@@ -57,7 +57,7 @@ async function callTool($: any, tool: string, args: Record<string, unknown>): Pr
   const text = typeof r?.text === 'string' ? r.text : typeof r?.result === 'string' ? r.result : JSON.stringify(r?.result ?? null)
   if (r?.isError === true) return { ok: false, error: text }
   // Output over Claude Code's size limit comes back as a notice naming the file it was saved to
-  const file = spilledFile(text, await configDir($))
+  const file = spilledFile(text, await configDir($), await $.session.id())
   if (file === undefined) return { ok: true, text }
   try {
     return { ok: true, text: spilledText(file, await $.fs.read(file)) }
