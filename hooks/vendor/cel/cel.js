@@ -2997,7 +2997,6 @@ function registerMacros(registry) {
 
 // design/v0.2-custom-rules/node_modules/@marcbachmann/cel-js/lib/overloads.js
 function registerOverloads(registry) {
-  const unaryOverload = (op, t, h, ret) => registry.unaryOverload(op, t, h, ret, false);
   const binaryOverload = (l, op, r, h, ret) => registry.binaryOverload(l, op, r, h, ret, false);
   function verifyInteger(v, ast) {
     if (v <= MAX_INT && v >= MIN_INT)
@@ -3010,8 +3009,8 @@ function registerOverloads(registry) {
   function throwModuloByZero(ast) {
     throw evaluationError("modulo_by_zero", "modulo by zero", ast);
   }
-  unaryOverload("!", "bool", (a) => !a);
-  unaryOverload("-", "int", (a) => -a);
+  registry.unaryOverload("!", "bool", (a) => !a, undefined, false);
+  registry.unaryOverload("-", "int", (a) => -a, undefined, false);
   binaryOverload("dyn<int>", `==`, `double`, (a, b) => a == b);
   binaryOverload("dyn<int>", `==`, `uint`, (a, b) => a == b.valueOf());
   binaryOverload("int", "*", "int", (a, b, ast) => verifyInteger(a * b, ast));
@@ -3027,7 +3026,7 @@ function registerOverloads(registry) {
       return throwModuloByZero(ast);
     return a % b;
   });
-  unaryOverload("-", "double", (a) => -a);
+  registry.unaryOverload("-", "double", (a) => -a, undefined, false);
   binaryOverload("double", "*", "double", (a, b) => a * b);
   binaryOverload("double", "+", "double", (a, b) => a + b);
   binaryOverload("double", "-", "double", (a, b) => a - b);

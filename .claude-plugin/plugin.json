@@ -1,7 +1,7 @@
 {
   "name": "code-mode",
   "displayName": "code-mode",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Code Mode for Claude Code: the model writes a small sandboxed CEL program that calls MCP and read-only tools, filters and joins their results, and returns only what it needs, so large tool outputs never fill the context. Every call still goes through the permission checks.",
   "author": {
     "name": "Rui He",

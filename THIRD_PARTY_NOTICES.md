@@ -15,6 +15,8 @@ This project's own code is released under the [Unlicense](LICENSE). It bundles t
 bun build node_modules/@marcbachmann/cel-js/lib/index.js --format=esm --target=browser --outfile=hooks/vendor/cel/cel.js
 ```
 
+then patched by hand: in `registerOverloads`, the local `unaryOverload` shorthand is removed and its three calls (`!` on bool, `-` on int and double) call `registry.unaryOverload(op, type, handler, undefined, false)` directly. Behaviour is unchanged; the three-argument calls `unaryOverload("!", "bool", (a) => !a)` look like `on(event, matcher, hook)` to the plugin directory's static check, which then rejects the mod. Reapply this after a rebuild.
+
 The `.d.ts` files are the package's own type declarations, copied as they are, with `cel.d.ts` re-exporting `index.d.ts`.
 
 ```
