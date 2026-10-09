@@ -15,6 +15,7 @@ A Claude Mod (v2.1.287+) that adds ciel-mode (**C**all-**i**n-**CEL** mode): Cla
 - `hooks/vendor/cel/`: cel-js 8.0.0, vendored; don't edit (see THIRD_PARTY_NOTICES.md to rebuild)
 - `tests/*.test.ts`: run with `claude plugin test`
 - `e2e/mock-mcp.mjs`: a stdio MCP server with deterministic data (300 issues; `list_issues` about 131 KB, `get_issue`, `get_issue_full` with whole threads, `stats`, `echo_text`, `fail`); `e2e/run.sh`: end-to-end checks
+- `e2e/pubmed.sh` (+ `pubmed-report.py`): the README's benchmark. claude-sonnet-5-5 with the pubmed-literature-search skill (copied in from `SKILL_DIR` as a project skill) and Anthropic's public PubMed MCP server (`https://pubmed.mcp.claude.com/mcp`, named `PubMed`; a child `claude -p` doesn't get claude.ai connectors). Arms off/on/deny (`deny_direct`). The report checks answers that cite Manouchehri 2021 (PMID 33653334) for the Results-only trim-and-fill RR 1.02. `stream-json` doesn't echo a slash command's expanded skill body; the session transcript under `~/.claude/projects/` has it
 
 ## Conventions
 

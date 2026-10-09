@@ -73,21 +73,33 @@ Set them in `/plugin`, or under `pluginConfigs` in your settings.
 
 ## Measured
 
-`e2e/run.sh` asks claude-haiku-5-5 three questions about a mock issue tracker (300 issues) three ways: without ciel-mode, with it, and with it and `deny_direct`. Every answer in the runs below was correct. Input tokens summed over each run's requests, for three runs each:
+`e2e/pubmed.sh` runs a real literature question through claude-sonnet-5-5 with the pubmed-literature-search skill and Anthropic's PubMed MCP server:
 
-| Question | Without ciel-mode | ciel-mode | ciel-mode + `deny_direct` |
+> /pubmed-literature-search Is insufficient or irregular sleep a carcinogenic risk factor? If so, what's the estimated odds ratio?
+
+Each session is a fresh `claude -p` in one of three arms: without ciel-mode (off), with it (on), and with it and `deny_direct`. The PubMed tools and the read-only built-ins (Read, Glob, Grep) are allowed, and for programs `always_allow`'ed, so no session stops for a prompt. Claude Code also lets read-only Bash commands such as `jq` run. 51 sessions in all. Medians, with the range in brackets:
+
+| | Without ciel-mode | ciel-mode | ciel-mode + `deny_direct` |
 | --- | --- | --- | --- |
-| Q1: count open stale issues and their top labels (one 81 KB list) | 74k, 94k, 74k | 61k, 83k, 252k | 61k, 82k, 81k |
-| Q2: top 5 issues by comments, then each one's commenters (list + 5 calls) | 104k, 103k, 103k | 200k, 199k, 153k | 172k, 149k, 159k |
-| Q3: top 3 commenters across 40 full threads (40 calls, 115 KB in all) | 96k, 96k, 96k | 82k, 103k, 83k | 82k, 124k, 125k |
+| Sessions | 18 | 18 | 15 |
+| Sessions that ran a program | 0 | 0 | 15 |
+| Input tokens, all requests | 284k (182k–441k) | 290k (127k–457k) | 303k (243k–502k) |
+| of which written to the cache | 47k (29k–60k) | 49k (28k–74k) | 32k (26k–37k) |
+| Output tokens | 4.2k | 4.0k | 4.5k |
+| Tool output that reached the context | 81 KB (33–116 KB) | 76 KB (32–143 KB) | 40 KB (22–51 KB) |
+| Turns (tool calls) | 11 | 10 | 10 |
+| Cost per session, median (mean) | $0.27 ($0.28) | $0.29 ($0.29) | $0.24 ($0.23) |
+
+**Quality check.** The skill exists because abstracts mislead. Manouchehri et al. 2021 ([PMID 33653334](https://pubmed.ncbi.nlm.nih.gov/33653334/)), a meta-analysis of night-shift work and breast cancer, reports a long-term RR of 1.08 (0.99–1.17) in its abstract. Its Results give the publication-bias correction: Egger's test p = 0.003, and after trim-and-fill RR 1.02 (0.91–1.15), essentially null. The report counts an answer that cites the paper without that correction as a failure. No session in any arm fetched the paper's full text. Three answers cited it, all from the abstract, and all three fail: one without ciel-mode and two in the ciel-mode arm (sessions that called PubMed directly and never ran a program). No `deny_direct` answer cited it. Every other answer reached the same conclusion: short sleep is not associated with overall cancer (pooled OR about 1.0), and night-shift work has a weak, contested link to breast cancer.
 
 What this shows:
 
-- **ciel-mode saves tokens when one program does the job and the data would otherwise land in the context.** In Q3 each output is under Claude Code's size limits, so without ciel-mode all 115 KB is read inline; a program that gets it right the first time uses about 15% less. In a longer session the saving grows, since data in the context is re-read on every later request.
-- **It costs tokens when the data would not have landed anyway, or when the program takes several tries.** Claude Code already saves an output over its size limit to a file; in Q1 and Q2 the baseline read that file with one Bash+Python command (which works, but runs an unsandboxed script). Most of each request is Claude Code's own system prompt and tools, so every extra request costs about as much as the data saved, and Haiku often needs two or three attempts at a CEL program. The one 252k run called the tool directly first, then tried Bash, Read and a program over the file Claude Code saved the output to before it wrote the program that answered.
-- **`deny_direct`** removes the direct first call that otherwise brings the output, or Claude Code's notice for it, into the context.
+- **Sonnet doesn't use ciel-mode unprompted here.** In all 18 ciel-mode sessions it called PubMed directly, so that arm measures the mod sitting unused (its tools in the prompt), which costs nothing visible. The skill's own workflow (search, then metadata, then full text) names the PubMed tools, which may be why.
+- **With `deny_direct`, every session wrote programs and kept about half the tool output out of the context.** It first tries PubMed directly once or twice, is refused, then runs 4 to 11 programs that return the fields it wants, such as titles and abstracts, or sentences matching `Egger|publication bias` in a full text, rather than whole records.
+- **Total input tokens don't fall, but cost does, by about 15%.** Most of each request is Claude Code's own prompt plus the conversation so far, read back from the cache. Less data in the context means fewer cache writes (32k against 47k), which cost more than cache reads. The extra request or two for the refused direct calls and for retried programs adds cache reads.
+- **Over a longer session the saving grows**, since data in the context is read again on every later request.
 
-A stronger model writes the program right the first time more often. The error hints and the lambda forms (`sortBy(x, key)`) were added for the mistakes Haiku made in these runs.
+`e2e/run.sh` still runs the earlier synthetic model checks, against a mock issue tracker with claude-haiku-5-5.
 
 ## Safety
 
@@ -111,7 +123,7 @@ claude --plugin-dir /path/to/ciel-mode
 
 - `claude plugin validate .` and `claude plugin test` (unit and test-kit tests in `tests/`)
 - Typecheck: load once with `claude --plugin-dir .` to generate `.claude-plugin/types/`, then `npx -p typescript tsc -p .`
-- `e2e/run.sh quick` runs the deterministic end-to-end checks against a real Claude Code; `e2e/run.sh` adds the model runs. See [CLAUDE.md](CLAUDE.md).
+- `e2e/run.sh quick` runs the deterministic end-to-end checks against a real Claude Code; `e2e/run.sh` adds the model runs. `SKILL_DIR=<pubmed-literature-search skill dir> e2e/pubmed.sh [runs]` runs the PubMed benchmark above. See [CLAUDE.md](CLAUDE.md).
 
 ## License & Acknowledgements
 
