@@ -47,36 +47,7 @@ for i in $(seq 1 "$RUNS"); do run "off$i" off & run "on$i" on & run "deny$i" den
 wait
 
 # One row per run: tokens, cost, tool calls, how much tool output reached the context, and the
-# Manouchehri check (the abstract's RR 1.08 vs the Results' trim-and-fill RR 1.02, 0.91-1.15).
-python3 - "$T" "$RUNS" <<'EOF'
-import json, re, sys, os
-T, runs = sys.argv[1], int(sys.argv[2])
-for mode in ('off', 'on', 'deny'):
-    for i in range(1, runs + 1):
-        name = f'{mode}{i}'
-        res, calls, seen, outch, mano = None, {}, '', 0, False
-        for line in open(os.path.join(T, name + '.jsonl')):
-            d = json.loads(line)
-            if d.get('type') == 'result': res = d
-            if d.get('type') == 'assistant':
-                for b in d['message']['content']:
-                    if b.get('type') == 'tool_use':
-                        calls[b['name']] = calls.get(b['name'], 0) + 1
-                        seen += json.dumps(b['input'])
-            if d.get('type') == 'user' and isinstance(d['message']['content'], list):
-                for b in d['message']['content']:
-                    if b.get('type') == 'tool_result':
-                        c = b['content'] if isinstance(b['content'], str) else ' '.join(x.get('text', '') for x in b['content'] if isinstance(x, dict))
-                        outch += len(c); seen += c
-        if not res: print(name, 'no result'); continue
-        u = res['usage']
-        inp = u['input_tokens'] + u['cache_read_input_tokens'] + u['cache_creation_input_tokens']
-        ans = res.get('result', '')
-        mano = bool(re.search(r'Manouchehri|34409980|12905-021-01233', seen + ans))
-        ok = bool(re.search(r'1\.02', ans) and re.search(r'trim.and.fill', ans, re.I))
-        verdict = ('pass' if ok else 'FAIL') if mano else 'no Manouchehri'
-        print(f"{name}: {inp} input, {u['output_tokens']} output, ${res.get('total_cost_usd', 0):.2f}, "
-              f"{res['num_turns']} turns, {res['duration_ms'] // 1000}s, {outch} chars of tool output; "
-              f"Manouchehri: {verdict}; calls: {calls}")
-print('streams:', T)
-EOF
+# Manouchehri check. Manouchehri et al. 2021 (PMID 33653334, PMC7927396) reports long-term RR 1.08
+# in its abstract; only its Results give the trim-and-fill estimate RR 1.02 (0.91-1.15). An answer
+# that cites the paper passes if it gives that estimate, and fails if it doesn't.
+python3 "$E2E/pubmed-report.py" "$T" "$RUNS"
