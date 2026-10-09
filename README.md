@@ -73,30 +73,35 @@ Set them in `/plugin`, or under `pluginConfigs` in your settings.
 
 ## Measured
 
-`e2e/pubmed.sh` runs a real literature question through claude-sonnet-5-5 with the pubmed-literature-search skill and Anthropic's PubMed MCP server:
+`e2e/pubmed.sh` asks claude-sonnet-5-5 real literature questions using the pubmed-literature-search skill and Anthropic's PubMed MCP server:
 
-> /pubmed-literature-search Is insufficient or irregular sleep a carcinogenic risk factor? If so, what's the estimated odds ratio?
+- **Sleep:** `/pubmed-literature-search Is insufficient or irregular sleep a carcinogenic risk factor? If so, what's the estimated odds ratio?`
+- **ALA:** `/pubmed-literature-search What's the effect of alpha-lipoic acid on antioxidation and glucose metabolism?`
 
-Each session is a fresh `claude -p` in one of three arms: without ciel-mode (off), with it (on), and with it and `deny_direct`. The PubMed tools and the read-only built-ins (Read, Glob, Grep) are allowed, and for programs `always_allow`'ed, so no session stops for a prompt. Claude Code also lets read-only Bash commands such as `jq` run. 51 sessions in all. Medians, with the range in brackets:
+Each session is a fresh `claude -p` in one of three arms: without ciel-mode (off), with it (on), and with it and `deny_direct`. The PubMed tools and the read-only built-ins (Read, Glob, Grep) are allowed, and for programs `always_allow`'ed, so no session stops for a prompt. Claude Code also lets read-only Bash commands such as `jq` run. 81 sessions in all. Medians, with the range in brackets:
 
-| | Without ciel-mode | ciel-mode | ciel-mode + `deny_direct` |
-| --- | --- | --- | --- |
-| Sessions | 18 | 18 | 15 |
-| Sessions that ran a program | 0 | 0 | 15 |
-| Input tokens, all requests | 284k (182k–441k) | 290k (127k–457k) | 303k (243k–502k) |
-| of which written to the cache | 47k (29k–60k) | 49k (28k–74k) | 32k (26k–37k) |
-| Output tokens | 4.2k | 4.0k | 4.5k |
-| Tool output that reached the context | 81 KB (33–116 KB) | 76 KB (32–143 KB) | 40 KB (22–51 KB) |
-| Turns (tool calls) | 11 | 10 | 10 |
-| Cost per session, median (mean) | $0.27 ($0.28) | $0.29 ($0.29) | $0.24 ($0.23) |
+| Question, arm | Sessions (ran a program) | Input tokens | of which cache writes | Tool output in the context | Cost, median (mean) | Trap paper cited: passed / failed |
+| --- | --- | --- | --- | --- | --- | --- |
+| Sleep, off | 18 (0) | 284k (182k–441k) | 47k | 81 KB (33–116 KB) | $0.27 ($0.28) | 0 / 1 |
+| Sleep, on | 18 (0) | 290k (127k–457k) | 49k | 76 KB (32–143 KB) | $0.29 ($0.29) | 0 / 2 |
+| Sleep, `deny_direct` | 15 (15) | 303k (243k–502k) | 32k | 40 KB (22–51 KB) | $0.24 ($0.23) | 0 / 0 |
+| ALA, off | 10 (0) | 293k (226k–378k) | 54k | 92 KB (61–103 KB) | $0.30 ($0.30) | 2 / 0 |
+| ALA, on | 10 (0) | 339k (133k–423k) | 46k | 71 KB (44–115 KB) | $0.28 ($0.28) | 0 / 0 |
+| ALA, `deny_direct` | 10 (10) | 262k (244k–382k) | 37k | 47 KB (41–65 KB) | $0.24 ($0.25) | 0 / 1 |
 
-**Quality check.** The skill exists because abstracts mislead. Manouchehri et al. 2021 ([PMID 33653334](https://pubmed.ncbi.nlm.nih.gov/33653334/)), a meta-analysis of night-shift work and breast cancer, reports a long-term RR of 1.08 (0.99–1.17) in its abstract. Its Results give the publication-bias correction: Egger's test p = 0.003, and after trim-and-fill RR 1.02 (0.91–1.15), essentially null. The report counts an answer that cites the paper without that correction as a failure. No session in any arm fetched the paper's full text. Three answers cited it, all from the abstract, and all three fail: one without ciel-mode and two in the ciel-mode arm (sessions that called PubMed directly and never ran a program). No `deny_direct` answer cited it. Every other answer reached the same conclusion: short sleep is not associated with overall cancer (pooled OR about 1.0), and night-shift work has a weak, contested link to breast cancer.
+**The traps.** The skill exists because abstracts mislead, and each question has a paper whose abstract does. An answer that cites the paper must say what only a careful reading shows; `e2e/pubmed-report.py` checks this, and every citing answer above was also read by hand.
+
+- Sleep: Manouchehri et al. 2021 ([PMID 33653334](https://pubmed.ncbi.nlm.nih.gov/33653334/)), night-shift work and breast cancer. The abstract reports a long-term RR of 1.08 (0.99–1.17). Its Results give the publication-bias correction: Egger's test p = 0.003, and after trim-and-fill RR 1.02 (0.91–1.15), essentially null. No session fetched its full text. The three that cited it quoted the abstract. Two of them were in the ciel-mode arm, but they called PubMed directly and never ran a program.
+- ALA: Abu-Zaid et al. 2023 ([PMID 38044616](https://pubmed.ncbi.nlm.nih.gov/38044616/)), ALA in PCOS. The abstract says significant differences were seen in lipids, malondialdehyde and total antioxidant capacity. Its Conclusion says ALA had no substantial influence on them: a dropped negation. Both answers without ciel-mode that cited it caught this, one from the full text and one from the abstract contradicting itself. The `deny_direct` answer that cited it failed: its program returned `a.abstract.truncate(1500)` for each paper, the cut fell before the oxidative-stress sentence, and Claude reported that it had not seen those results.
+
+Every answer reached the field's consensus. For sleep: short sleep is not associated with overall cancer (pooled OR about 1.0), and night-shift work has a weak, contested link to breast cancer. For ALA: a small, inconsistent improvement in glucose and insulin resistance, mainly in people with metabolic disease, and an antioxidant effect that is clear in cells and animals but thin in human trials.
 
 What this shows:
 
-- **Sonnet doesn't use ciel-mode unprompted here.** In all 18 ciel-mode sessions it called PubMed directly, so that arm measures the mod sitting unused (its tools in the prompt), which costs nothing visible. The skill's own workflow (search, then metadata, then full text) names the PubMed tools, which may be why.
-- **With `deny_direct`, every session wrote programs and kept about half the tool output out of the context.** It first tries PubMed directly once or twice, is refused, then runs 4 to 11 programs that return the fields it wants, such as titles and abstracts, or sentences matching `Egger|publication bias` in a full text, rather than whole records.
-- **Total input tokens don't fall, but cost does, by about 15%.** Most of each request is Claude Code's own prompt plus the conversation so far, read back from the cache. Less data in the context means fewer cache writes (32k against 47k), which cost more than cache reads. The extra request or two for the refused direct calls and for retried programs adds cache reads.
+- **Sonnet doesn't use ciel-mode unprompted here.** In all 28 ciel-mode sessions it called PubMed directly, so that arm measures the mod sitting unused (its tools in the prompt), which costs nothing visible. The skill's own workflow (search, then metadata, then full text) names the PubMed tools, which may be why.
+- **With `deny_direct`, every session wrote programs and kept about half the tool output out of the context.** It first tries PubMed directly twice, is refused, then runs 4 to 11 programs that return the fields it wants, such as titles and abstracts, or sentences matching `Egger|publication bias` in a full text, rather than whole records.
+- **Total input tokens don't fall much, but cost falls by about 15–20%.** Most of each request is Claude Code's own prompt plus the conversation so far, read back from the cache. Less data in the context means fewer cache writes (32–37k against 47–54k), which cost more than cache reads. The extra requests for the refused direct calls and for retried programs add cache reads.
+- **What a program cuts, Claude never reads.** Truncating text to save tokens can drop the one sentence that matters, as in the ALA failure. This is the price of keeping data out of the context: Claude can only weigh what the program chose to return.
 - **Over a longer session the saving grows**, since data in the context is read again on every later request.
 
 `e2e/run.sh` still runs the earlier synthetic model checks, against a mock issue tracker with claude-haiku-5-5.
@@ -123,7 +128,7 @@ claude --plugin-dir /path/to/ciel-mode
 
 - `claude plugin validate .` and `claude plugin test` (unit and test-kit tests in `tests/`)
 - Typecheck: load once with `claude --plugin-dir .` to generate `.claude-plugin/types/`, then `npx -p typescript tsc -p .`
-- `e2e/run.sh quick` runs the deterministic end-to-end checks against a real Claude Code; `e2e/run.sh` adds the model runs. `SKILL_DIR=<pubmed-literature-search skill dir> e2e/pubmed.sh [runs]` runs the PubMed benchmark above. See [CLAUDE.md](CLAUDE.md).
+- `e2e/run.sh quick` runs the deterministic end-to-end checks against a real Claude Code; `e2e/run.sh` adds the model runs. `SKILL_DIR=<pubmed-literature-search skill dir> QUESTION=sleep|ala e2e/pubmed.sh [runs]` runs the PubMed benchmark above. See [CLAUDE.md](CLAUDE.md).
 
 ## License & Acknowledgements
 

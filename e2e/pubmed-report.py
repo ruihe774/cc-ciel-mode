@@ -12,7 +12,7 @@ TRAPS = {
     # Abu-Zaid et al. 2024 (PMID 38044616), ALA in PCOS: the abstract says lipids, MDA and TAC
     # differed significantly; the Conclusion says ALA had no substantial influence on them.
     'ala': ('Abu-Zaid', r'Abu-?\s?Zaid|38044616|ogs\.23206|PMC10792302', '10792302',
-            lambda a: re.search(r'contradict|opposite|invert|negation|revers|inconsisten|discrepan|conflict', a, re.I)),
+            lambda a: re.search(r'dropped .{0,6}\bno\b|negation|opposite|invert|contradicts? (the|its)', a, re.I)),
 }
 TRAP, PAPER, PMC, PASSES = TRAPS[sys.argv[3] if len(sys.argv) > 3 else 'sleep']
 for mode in ('off', 'on', 'deny'):
