@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A stdio MCP server with no dependencies, serving deterministic data for code-mode's tests.
+// A stdio MCP server with no dependencies, serving deterministic data for ciel-mode's tests.
 // MOCK_EXTRA_TOOLS=N adds N filler tools, enough to make Claude Code defer MCP tools.
 import { createInterface } from 'node:readline'
 

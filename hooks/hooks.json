@@ -1,4 +1,4 @@
 {
-  "description": "code-mode hooks module",
+  "description": "ciel-mode hooks module",
   "modules": ["./register.ts"]
 }

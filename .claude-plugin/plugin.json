@@ -1,15 +1,15 @@
 {
-  "name": "code-mode",
-  "displayName": "code-mode",
+  "name": "ciel-mode",
+  "displayName": "ciel-mode",
   "version": "0.1.1",
-  "description": "Code Mode for Claude Code: the model writes a small sandboxed CEL program that calls MCP and read-only tools, filters and joins their results, and returns only what it needs, so large tool outputs never fill the context. Every call still goes through the permission checks.",
+  "description": "ciel-mode (Call-in-CEL mode) for Claude Code: the model writes a small sandboxed CEL program that calls MCP and read-only tools, filters and joins their results, and returns only what it needs, so large tool outputs never fill the context. Every call still goes through the permission checks.",
   "author": {
     "name": "Rui He",
     "email": "ruihe774@outlook.com"
   },
   "license": "Unlicense AND MIT",
   "keywords": [
-    "code-mode",
+    "ciel-mode",
     "mcp",
     "cel",
     "programmatic-tool-calling",
@@ -21,7 +21,7 @@
     "tools": {
       "type": "string",
       "title": "Callable tools",
-      "description": "A regex over full tool names: the tools a program may call. Empty means the default, every MCP tool plus Read, Glob, Grep, WebFetch and WebSearch. code-mode's own tools are never callable.",
+      "description": "A regex over full tool names: the tools a program may call. Empty means the default, every MCP tool plus Read, Glob, Grep, WebFetch and WebSearch. ciel-mode's own tools are never callable.",
       "default": "^(mcp__.+|Read|Glob|Grep|WebFetch|WebSearch)$"
     },
     "always_allow": {

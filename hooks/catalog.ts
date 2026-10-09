@@ -2,7 +2,7 @@
 // Pure and free of the mods API, so it can be unit tested.
 import type { Scope } from './program.ts'
 
-export const PLUGIN = 'code-mode'
+export const PLUGIN = 'ciel-mode'
 export const OWN_PREFIX = `mcp__${PLUGIN}__`
 export const DEFAULT_TOOLS = '^(mcp__.+|Read|Glob|Grep|WebFetch|WebSearch)$'
 

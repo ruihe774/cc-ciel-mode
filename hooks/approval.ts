@@ -1,5 +1,5 @@
 // Approval of a program's calls. Claude Code skips the auto-mode classifier for a call a
-// plugin raises and lets it run, so code-mode decides such calls itself: a call whose
+// plugin raises and lets it run, so ciel-mode decides such calls itself: a call whose
 // permission decision is `ask` runs only when the user approved its tool for this
 // program, in one dialog before the program starts, or allows it always (`always_allow`).
 // Every other `ask` is refused. Pure and free of the mods API; register.ts asks and checks.
@@ -37,7 +37,7 @@ export class Pending {
 
 /** The question of the approval dialog. */
 export function approvalQuestion(tools: readonly string[]): string {
-  return `A code-mode program wants to call ${tools.length === 1 ? 'this tool, which needs' : 'these tools, which need'} your approval: ${tools.join(', ')}. Let this program call ${tools.length === 1 ? 'it' : 'them'} with any arguments?`
+  return `A ciel-mode program wants to call ${tools.length === 1 ? 'this tool, which needs' : 'these tools, which need'} your approval: ${tools.join(', ')}. Let this program call ${tools.length === 1 ? 'it' : 'them'} with any arguments?`
 }
 
 export const APPROVE = 'Run the program'

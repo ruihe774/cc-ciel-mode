@@ -1,4 +1,4 @@
-// code-mode: the model writes a small CEL program that calls tools, filters and joins
+// ciel-mode: the model writes a small CEL program that calls tools, filters and joins
 // their results, and returns only what it needs. Programs run in a sandbox (CEL can
 // reach nothing but the functions program.ts gives it); every tool call goes back
 // through $.tool.call, so permission checks and other mods' hooks still apply.
@@ -55,7 +55,7 @@ let details = callEach("mcp__github__get_issue", top.map(i, {"owner": "o", "repo
 details.map(d, {"n": d.number, "assignee": d.?assignee.?login.orValue("none")})`
 
 // Programs' calls on their way to tool.check, and among them the calls of approved tools,
-// whose `ask` becomes `allow`. code-mode's other calls (the approval dialog) aren't in them.
+// whose `ask` becomes `allow`. ciel-mode's other calls (the approval dialog) aren't in them.
 const inFlight = new Pending()
 const approvedCalls = new Pending()
 
@@ -115,7 +115,7 @@ async function needingApproval($: any, tools: readonly string[], options: Settin
 
 /** Runs a program with this session's settings. Before its first call, the user approves
  *  the tools it names that need approval: in a dialog, or by having typed the program
- *  (`byUser`, /code-mode). */
+ *  (`byUser`, /ciel-mode). */
 async function run($: any, program: unknown, options: Settings, signal: AbortSignal | undefined, byUser: boolean): Promise<RunResult> {
   if (typeof program !== 'string' || !program.trim()) return { ok: false, error: 'program is required', calls: 0 }
   const approved = new Set<string>()
@@ -124,7 +124,7 @@ async function run($: any, program: unknown, options: Settings, signal: AbortSig
     if (ask.length && !byUser) {
       let answer = ''
       try {
-        answer = await $.ui.ask(approvalQuestion(ask), { options: [APPROVE, DECLINE], header: 'code-mode' })
+        answer = await $.ui.ask(approvalQuestion(ask), { options: [APPROVE, DECLINE], header: 'ciel-mode' })
       } catch {
         return `the user's approval is needed to call ${ask.join(', ')}, and none was given (the dialog was dismissed, or no one can be asked). Call ${ask.length === 1 ? 'it' : 'them'} directly instead.`
       }
@@ -185,7 +185,7 @@ export function register(on: any, options?: Record<string, unknown>) {
       inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Optional filter, e.g. "github|issue"' } } },
       isDeferred: false,
     })
-    await $.command.register({ name: PLUGIN, description: 'Run a code-mode program yourself: `let` lines, then the result expression', argumentHint: '<program>' })
+    await $.command.register({ name: PLUGIN, description: 'Run a ciel-mode program yourself: `let` lines, then the result expression', argumentHint: '<program>' })
     return next(e)
   })
 
@@ -194,12 +194,12 @@ export function register(on: any, options?: Record<string, unknown>) {
     return next(e)
   })
 
-  on('tool.call', { tool: 'mcp__code-mode__run' }, async ($: any, e: any, next: any) => {
+  on('tool.call', { tool: 'mcp__ciel-mode__run' }, async ($: any, e: any, next: any) => {
     const r = await run($, e.program, s, next.signal, false)
     return r.ok ? { result: r.output } : { isError: true, result: `Error: ${r.error}` }
   }).catch(async ($: any, e: any, next: any) => ({ isError: true, result: `Error: the program was stopped (${next.error.kind}: ${next.error.message})` }))
 
-  on('tool.call', { tool: 'mcp__code-mode__tools' }, async ($: any, e: any) => {
+  on('tool.call', { tool: 'mcp__ciel-mode__tools' }, async ($: any, e: any) => {
     return { result: index(await $.tool.list(), s.scope, typeof e.query === 'string' ? e.query : undefined) }
   })
 
@@ -211,9 +211,9 @@ export function register(on: any, options?: Record<string, unknown>) {
     if (next.origin?.plugin !== PLUGIN || !e.tool_use_id || r?.decision !== 'ask') return r
     const key = callKey(e.tool, e.input)
     if (!inFlight.has(key)) return r
-    if (approvedCalls.has(key)) return { ...r, decision: 'allow', reason: `approved for this code-mode program` }
+    if (approvedCalls.has(key)) return { ...r, decision: 'allow', reason: `approved for this ciel-mode program` }
     return { decision: 'deny', reason: unapprovedReason(e.tool) }
-  }).catch(async ($: any, e: any, next: any) => ({ decision: 'deny', reason: `code-mode could not check this call (${next.error.message})` }))
+  }).catch(async ($: any, e: any, next: any) => ({ decision: 'deny', reason: `ciel-mode could not check this call (${next.error.message})` }))
 
   // Opt-in: the model's own calls to callable MCP tools are turned away to a program.
   // The calls a program makes are this plugin's, and pass.
@@ -224,7 +224,7 @@ export function register(on: any, options?: Record<string, unknown>) {
     }
   })
 
-  on('command.run', { command: 'code-mode' }, async ($: any, e: any, next: any) => {
+  on('command.run', { command: 'ciel-mode' }, async ($: any, e: any, next: any) => {
     const r = await run($, e.args, s, next.signal, true)
     return r.ok ? { text: r.output } : { text: `Error: ${r.error}`, exitCode: 1 }
   })

@@ -21,7 +21,7 @@ function stubEngine(
       { name: 'Read', description: 'Read a file\nLong details', mcp: false },
       { name: 'mcp__t__list', description: 'List issues.\n\nMore text.', mcp: true },
       { name: 'mcp__t__get', description: 'Get one issue', mcp: true },
-      { name: 'mcp__code-mode__run', description: 'Run a program', mcp: true },
+      { name: 'mcp__ciel-mode__run', description: 'Run a program', mcp: true },
     ],
   }))
   // The permission rules allow the mock's tools, unless a test says otherwise
@@ -52,7 +52,7 @@ function stubEngine(
   })
 }
 
-const RUN = 'mcp__code-mode__run'
+const RUN = 'mcp__ciel-mode__run'
 const runText = async ($: any, program: string) => {
   const r = await $.tool.call({ tool: RUN, program })
   return { text: String(r.result), isError: r.isError === true }
@@ -61,7 +61,7 @@ const runText = async ($: any, program: string) => {
 test('session start registers the run and tools tools and the command', async ($, on) => {
   const registered: any[] = []
   const commands: string[] = []
-  on('tool.register', (_$: any, e: any) => (registered.push(e), { value: { tool: `mcp__code-mode__${e.name}` } }))
+  on('tool.register', (_$: any, e: any) => (registered.push(e), { value: { tool: `mcp__ciel-mode__${e.name}` } }))
   on('command.register', (_$: any, e: any) => (commands.push(e.name), { value: { command: e.name } }))
   on('session.start', () => ({ cwd: '/proj' }))
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/proj' })
@@ -73,7 +73,7 @@ test('session start registers the run and tools tools and the command', async ($
   expect(registered[0].description.length).toBeLessThanOrEqual(2048)
   expect(registered[0].inputSchema.properties.program.description).toContain('CEL reference:')
   expect(registered[0].inputSchema.required).toEqual(['program'])
-  expect(commands).toEqual(['code-mode'])
+  expect(commands).toEqual(['ciel-mode'])
 })
 
 test('a program calls tools through the engine and returns only its result', async ($, on) => {
@@ -127,11 +127,11 @@ test('a declined or dismissed approval runs nothing', async ($, on) => {
   expect(seen).toHaveLength(0)
 })
 
-test('no dialog when the rules allow, or for a typed /code-mode program', async ($, on) => {
+test('no dialog when the rules allow, or for a typed /ciel-mode program', async ($, on) => {
   const asked: string[] = []
   stubEngine(on, [], {}, { checks: { mcp__t__get: 'ask' }, asked })
   expect((await runText($, 'call("mcp__t__list", {}).size()')).text).toBe('12')
-  expect(await $.command.run({ command: 'code-mode', args: 'call("mcp__t__get", {"number": 2}).title' } as any)).toMatchObject({ text: 'issue 2' })
+  expect(await $.command.run({ command: 'ciel-mode', args: 'call("mcp__t__get", {"number": 2}).title' } as any)).toMatchObject({ text: 'issue 2' })
   expect(asked).toHaveLength(0)
   // With no one to answer, a model's program that needs approval is refused
   expect((await runText($, 'call("mcp__t__get", {"number": 2}).title')).text).toContain("the user's approval is needed to call mcp__t__get")
@@ -146,15 +146,15 @@ test('always_allow skips the dialog', { options: { always_allow: '^mcp__t__' } }
 
 test('the tools tool lists callable tools, one line each', async ($, on) => {
   stubEngine(on)
-  const all = String((await $.tool.call({ tool: 'mcp__code-mode__tools' })).result)
+  const all = String((await $.tool.call({ tool: 'mcp__ciel-mode__tools' })).result)
   expect(all).toContain('mcp__t__list: List issues.\n')
   expect(all).toContain('Read: Read a file\n')
   expect(all).not.toContain('Bash')
-  expect(all).not.toContain('mcp__code-mode__run')
+  expect(all).not.toContain('mcp__ciel-mode__run')
   expect(all).not.toContain('More text')
-  const some = String((await $.tool.call({ tool: 'mcp__code-mode__tools', query: 'ISSUE' })).result)
+  const some = String((await $.tool.call({ tool: 'mcp__ciel-mode__tools', query: 'ISSUE' })).result)
   expect(some.split('\n\n')[0]).toBe('mcp__t__list: List issues.\nmcp__t__get: Get one issue')
-  expect(String((await $.tool.call({ tool: 'mcp__code-mode__tools', query: '(' })).result)).toContain('No callable tool matches')
+  expect(String((await $.tool.call({ tool: 'mcp__ciel-mode__tools', query: '(' })).result)).toContain('No callable tool matches')
 })
 
 test('direct MCP calls run as usual by default', async ($, on) => {
@@ -166,7 +166,7 @@ test('deny_direct turns the model away from MCP tools, but not programs', { opti
   const seen: { tool: string; args: Record<string, unknown> }[] = []
   stubEngine(on, seen)
   const direct = await $.tool.call({ tool: 'mcp__t__get', number: 1 } as any)
-  expect(direct.deny).toContain('mcp__code-mode__run')
+  expect(direct.deny).toContain('mcp__ciel-mode__run')
   // Built-in tools and tools outside the scope are never turned away
   expect((await $.tool.call({ tool: 'Read', file_path: '/x' })).result).toBe('ran Read')
   expect((await runText($, 'call("mcp__t__get", {"number": 1}).title')).text).toBe('issue 1')
@@ -180,12 +180,12 @@ test('a custom scope and call budget', { options: { tools: '^mcp__t__get$', max_
   expect((await runText($, '[1, 2].map(n, call("mcp__t__get", {"number": n}).title)')).text).toBe('["issue 1","issue 2"]')
 })
 
-test('vars persist across programs, the model\'s and /code-mode\'s, up to max_vars', { options: { max_vars: 1 } }, async ($, on) => {
+test('vars persist across programs, the model\'s and /ciel-mode\'s, up to max_vars', { options: { max_vars: 1 } }, async ($, on) => {
   const seen: { tool: string; args: Record<string, unknown> }[] = []
   stubEngine(on, seen)
   on('session.end', () => ({ sessionId: 'sess-1' }))
   expect((await runText($, 'var l = call("mcp__t__list", {})\nsize(l)')).text).toBe('12')
-  expect(await $.command.run({ command: 'code-mode', args: 'l.filter(i, i.state == "open").size()' } as any)).toMatchObject({ text: '6' })
+  expect(await $.command.run({ command: 'ciel-mode', args: 'l.filter(i, i.state == "open").size()' } as any)).toMatchObject({ text: '6' })
   expect((await runText($, 'var m = 1\nm')).text).toContain('more than 1 vars would be kept (kept now: l)')
   expect(seen).toHaveLength(1)
   // The session's end empties them
@@ -193,8 +193,8 @@ test('vars persist across programs, the model\'s and /code-mode\'s, up to max_va
   expect((await runText($, 'l')).text).toContain('Unknown variable: l')
 })
 
-test('/code-mode runs a program by hand', async ($, on) => {
+test('/ciel-mode runs a program by hand', async ($, on) => {
   stubEngine(on)
-  expect(await $.command.run({ command: 'code-mode', args: 'size(call("mcp__t__list", {}))' } as any)).toMatchObject({ text: '12' })
-  expect(await $.command.run({ command: 'code-mode', args: '1 +' } as any)).toMatchObject({ exitCode: 1 })
+  expect(await $.command.run({ command: 'ciel-mode', args: 'size(call("mcp__t__list", {}))' } as any)).toMatchObject({ text: '12' })
+  expect(await $.command.run({ command: 'ciel-mode', args: '1 +' } as any)).toMatchObject({ exitCode: 1 })
 })

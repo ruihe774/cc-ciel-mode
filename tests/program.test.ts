@@ -139,15 +139,15 @@ test('a tool named by a literal is checked against the scope before anything run
   const r = await run('let a = call("mcp__t__list", {})\ncall("Bash", {"command": "rm -rf /"})', h.host)
   expect(r).toMatchObject({ ok: false, error: 'line 2: Bash is not a tool this program may call (see the tools tool)' })
   expect(h.calls).toHaveLength(0)
-  for (const tool of ['Write', 'Edit', 'Agent', 'ToolSearch', 'mcp__code-mode__run', 'mcp__code-mode__tools'])
+  for (const tool of ['Write', 'Edit', 'Agent', 'ToolSearch', 'mcp__ciel-mode__run', 'mcp__ciel-mode__tools'])
     expect((await run(`tryCall("${tool}", {})`, h.host)).ok).toBe(false)
   expect(h.calls).toHaveLength(0)
 })
 
 test('a tool named by a computed string is checked when it is called', async () => {
   const h = fakeHost()
-  const r = await run('let t = "mcp__code-" + "mode__run"\ncall(t, {"program": "1"})', h.host)
-  expect(r).toMatchObject({ ok: false, error: 'line 2: mcp__code-mode__run is not a tool this program may call' })
+  const r = await run('let t = "mcp__ciel-" + "mode__run"\ncall(t, {"program": "1"})', h.host)
+  expect(r).toMatchObject({ ok: false, error: 'line 2: mcp__ciel-mode__run is not a tool this program may call' })
   expect(h.calls).toHaveLength(0)
 })
 
