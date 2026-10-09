@@ -111,6 +111,8 @@ claude --plugin-dir /path/to/code-mode
 - Typecheck: load once with `claude --plugin-dir .` to generate `.claude-plugin/types/`, then `npx -p typescript tsc -p .`
 - `e2e/run.sh quick` runs the deterministic end-to-end checks against a real Claude Code; `e2e/run.sh` adds the model runs. See [CLAUDE.md](CLAUDE.md).
 
-## License
+## License & Acknowledgements
 
 [Unlicense](LICENSE). Bundles [cel-js](https://github.com/marcbachmann/cel-js) (MIT); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+kzarzycki's eval-kernel was the first Claude mod implemnting a tool call executor. It used a standalone Bun process.
