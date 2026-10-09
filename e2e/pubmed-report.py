@@ -1,8 +1,20 @@
-# Summarizes the runs of e2e/pubmed.sh: python3 e2e/pubmed-report.py <dir> <runs per mode>
+# Summarizes the runs of e2e/pubmed.sh: python3 e2e/pubmed-report.py <dir> <runs per mode> [sleep|ala]
 import json, os, re, sys
 
 T, runs = sys.argv[1], int(sys.argv[2])
-PAPER = r'Manouchehri|33653334|12905-021-01233|PMC7927396|7927396'
+# Each question's trap: a paper (name, how an answer cites it, its PMC id), and what an answer that
+# cites it must say. An answer that doesn't cite it neither passes nor fails.
+TRAPS = {
+    # Manouchehri et al. 2021 (PMID 33653334) reports long-term RR 1.08 in its abstract; only its
+    # Results give the trim-and-fill estimate RR 1.02 (0.91-1.15).
+    'sleep': ('Manouchehri', r'Manouchehri|33653334|12905-021-01233|PMC7927396', '7927396',
+              lambda a: re.search(r'1\.02', a) and re.search(r'trim.{0,5}fill', a, re.I)),
+    # Abu-Zaid et al. 2024 (PMID 38044616), ALA in PCOS: the abstract says lipids, MDA and TAC
+    # differed significantly; the Conclusion says ALA had no substantial influence on them.
+    'ala': ('Abu-Zaid', r'Abu-?\s?Zaid|38044616|ogs\.23206|PMC10792302', '10792302',
+            lambda a: re.search(r'contradict|opposite|invert|negation|revers|inconsisten|discrepan|conflict', a, re.I)),
+}
+TRAP, PAPER, PMC, PASSES = TRAPS[sys.argv[3] if len(sys.argv) > 3 else 'sleep']
 for mode in ('off', 'on', 'deny'):
     for i in range(1, runs + 1):
         name = f'{mode}{i}'
@@ -29,13 +41,12 @@ for mode in ('off', 'on', 'deny'):
         u = res['usage']
         inp = u['input_tokens'] + u['cache_read_input_tokens'] + u['cache_creation_input_tokens']
         ans = res.get('result', '')
-        fulltext = bool(re.search(r'pmc_ids[^]]*7927396', inputs))
-        if re.search(PAPER, ans):
-            ok = re.search(r'1\.02', ans) and re.search(r'trim.{0,5}fill', ans, re.I)
-            verdict = 'pass' if ok else 'FAIL'
+        fulltext = bool(re.search(r'pmc_ids[^]]*' + PMC, inputs))
+        if re.search(PAPER, ans, re.I):
+            verdict = 'pass' if PASSES(ans) else 'FAIL'
         else:
             verdict = 'not cited'
         print(f"{name}: {inp} input, {u['output_tokens']} output, ${res.get('total_cost_usd', 0):.2f}, "
               f"{res['num_turns']} turns, {res['duration_ms'] // 1000}s, {outch} chars of tool output; "
-              f"Manouchehri: {verdict}{' (full text fetched)' if fulltext else ''}; calls: {calls}; refused: {refused}")
+              f"{TRAP}: {verdict}{' (full text fetched)' if fulltext else ''}; calls: {calls}; refused: {refused}")
 print('streams:', T)
