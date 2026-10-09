@@ -1,6 +1,7 @@
-// Programs: `let name = <CEL>` statements and a final CEL expression, compiled
-// (parsed and type-checked) as a whole before anything runs, then run against an
-// injected host that makes the tool calls. Pure and free of the mods API, so it
+// Programs: `let name = <CEL>` and `var name = <CEL>` statements and a final CEL
+// expression, compiled (parsed and type-checked) as a whole before anything runs, then
+// run against an injected host that makes the tool calls. A `var` outlives its run in a
+// store the caller keeps. Pure and free of the mods API, so it
 // can be unit tested; register.ts supplies the host.
 import { baseEnv, fromJson, render, toJson } from './stdlib.ts'
 import type { Environment } from './vendor/cel/cel.js'
@@ -10,10 +11,11 @@ import type { Environment } from './vendor/cel/cel.js'
 export interface Statement {
   line: number // 1-based line the statement starts on
   name?: string // the bound name; absent for the final expression
+  kind?: 'let' | 'var' // how it is bound; absent for the final expression
   source: string // the CEL expression
 }
 
-const LET = /^\s*let\s+([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)/
+const BIND = /^\s*(let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)/
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/
 // A line that starts with one of these continues the statement above it
 const LEADING_OP = /^\s*(\.|\?|:|&&|\|\||\+|\*|\/|%|==|!=|<|>|in\s|\]|\)|\})/
@@ -68,7 +70,7 @@ export class ProgramError extends Error {
   }
 }
 
-/** Splits a program into statements. A line starting `let x =` begins a binding;
+/** Splits a program into statements. A line starting `let x =` or `var x =` begins a binding;
  *  any other line begins the final expression, unless the statement above is still
  *  open (an open bracket or string, or a trailing operator) or the line starts with
  *  an operator or a `.`, in which case it continues that statement. */
@@ -82,12 +84,13 @@ export function parseProgram(text: string): Statement[] {
     const inside = !!cur && (state.depth > 0 || !!state.triple || cur.open)
     if (!inside && !raw.trim()) continue
     if (!inside && !raw.trim().startsWith('//')) {
-      const m = LET.exec(raw)
+      const m = BIND.exec(raw)
       if (m || !cur || !LEADING_OP.test(raw)) {
-        if (m && m[1] === 'let') throw new ProgramError('"let" is not a name', i + 1)
+        if (m && (m[2] === 'let' || m[2] === 'var')) throw new ProgramError(`"${m[2]}" is not a name`, i + 1)
         const body = m ? raw.slice(m[0].length) : raw
         const code = scan(body, state)
-        stmts.push({ line: i + 1, ...(m ? { name: m[1]! } : {}), source: body, open: TRAILING_OP.test(code) || (!!m && !code.trim()) })
+        const bind = m ? { name: m[2]!, kind: m[1] as 'let' | 'var' } : {}
+        stmts.push({ line: i + 1, ...bind, source: body, open: TRAILING_OP.test(code) || (!!m && !code.trim()) })
         continue
       }
     }
@@ -98,10 +101,10 @@ export function parseProgram(text: string): Statement[] {
   }
   if (!stmts.length) throw new ProgramError('the program is empty')
   stmts.forEach((s, i) => {
-    if (!s.source.trim()) throw new ProgramError(`let ${s.name} has no expression`, s.line)
+    if (!s.source.trim()) throw new ProgramError(`${s.kind} ${s.name} has no expression`, s.line)
     if (s.name === undefined && i < stmts.length - 1)
       throw new ProgramError(
-        'only the last statement can be a bare expression; start this one with `let <name> =`, or join it to the line above',
+        'only the last statement can be a bare expression; start this one with `let <name> =` (or `var`), or join it to the line above',
         s.line,
       )
   })
@@ -177,13 +180,23 @@ export function desugar(src: string): string {
 /** Which tools a program may call. */
 export type Scope = (tool: string) => boolean
 
+/** The vars kept across a session's programs: at most `max` of them, in memory only. */
+export interface VarStore {
+  values: Map<string, unknown>
+  max: number
+}
+
+/** A var's line is `null` and nothing else: it clears the var. */
+const clears = (s: Statement) => s.kind === 'var' && s.source.replace(/\/\/.*$/gm, '').trim() === 'null'
+
 export interface Compiled {
-  statements: readonly { line: number; name?: string; fn: (ctx: Record<string, unknown>) => unknown }[]
+  statements: readonly { line: number; name?: string; kind?: 'let' | 'var'; fn: (ctx: Record<string, unknown>) => unknown }[]
   tools: readonly string[] // the tools the program names with string literals, in order
   run: RunState // the state the host functions read, reset by each run
 }
 
 interface RunState {
+  store: VarStore
   host?: Host
   limits?: Limits
   signal?: AbortSignal
@@ -213,7 +226,7 @@ const HINTS: [RegExp, string][] = [
   [/overload for 'string\((list|map)/, 'print a list or map with toJson(value)'],
   [/Reserved identifier: let/, '`let` only starts a line; inside an expression bind a value with cel.bind(name, value, expression)'],
   [/has\(\) invalid argument/, 'has() takes a field of a name, like has(x.field); bind an element first, e.g. let first = xs[0]'],
-  [/Unknown variable: (for|while|if|return|const|var|function)\b/, 'CEL has no statements but `let`: use .map/.filter and `cond ? a : b`'],
+  [/Unknown variable: (for|while|if|return|const|function)\b/, 'CEL has no statements but `let` and `var`: use .map/.filter and `cond ? a : b`'],
   [/no matching overload/i, 'check the value types; a value from a tool is dyn, so convert with string(x), int(x) or double(x) where needed'],
 ]
 const withHint = (message: string) => {
@@ -282,6 +295,7 @@ function programEnv(st: RunState, scope: Scope): Environment {
   return baseEnv
     .clone()
     .registerFunction('call(string, map<string, dyn>): dyn', (tool: string, args: unknown) => callOrThrow(st, scope, tool, args))
+    .registerFunction('vars(): list<string>', () => [...st.store.values.keys()].sort())
     .registerFunction('call(string): dyn', (tool: string) => callOrThrow(st, scope, tool, new Map()))
     .registerFunction('tryCall(string, map<string, dyn>): map<string, dyn>', async (tool: string, args: unknown) => {
       const r = await invoke(st, scope, tool, args)
@@ -297,33 +311,72 @@ function programEnv(st: RunState, scope: Scope): Environment {
     })
 }
 
-/** Parses and type-checks a whole program, so a mistake costs no tool calls. */
-export function compileProgram(text: string, scope: Scope): Compiled {
+/** What a program's vars will be once it runs, checked against the cap before it does. */
+function checkVars(stmts: readonly Statement[], store: VarStore) {
+  const names = new Set(store.values.keys())
+  for (const s of stmts) {
+    if (s.kind !== 'var') continue
+    if (clears(s)) names.delete(s.name!)
+    else names.add(s.name!)
+    if (names.size > store.max)
+      throw new ProgramError(
+        store.max === 0
+          ? 'var is turned off (max_vars is 0); use let'
+          : `more than ${store.max} vars would be kept (kept now: ${[...store.values.keys()].join(', ') || 'none'}); clear one with \`var <name> = null\`, or use let`,
+        s.line,
+      )
+  }
+}
+
+/** The hint for an unknown name: the vars there are, when there are any. */
+function varsHint(message: string, store: VarStore): string {
+  if (!/Unknown variable/.test(message) || /\(/.test(message) || store.max === 0) return message
+  const kept = [...store.values.keys()]
+  return kept.length ? `${message} (vars kept from earlier programs: ${kept.sort().join(', ')})` : `${message} (no vars are kept: a \`let\` lasts one program, a \`var\` the session)`
+}
+
+/** Parses and type-checks a whole program, so a mistake costs no tool calls. `store`
+ *  holds the vars earlier programs kept; they are bound here as dyn. */
+export function compileProgram(text: string, scope: Scope, store: VarStore = { values: new Map(), max: 0 }): Compiled {
   const stmts = parseProgram(text)
-  const run: RunState = { calls: 0 }
+  const run: RunState = { store, calls: 0 }
   const env = programEnv(run, scope)
+  for (const name of store.values.keys()) env.registerVariable(name, 'dyn')
   const statements: Compiled['statements'][number][] = []
   const tools = new Set<string>()
+  const bound = new Set<string>() // names this program binds
   for (const s of stmts) {
     for (const m of s.source.matchAll(LITERAL_TOOL)) {
       const tool = m[1] ?? m[2]!
       if (!scope(tool)) throw new ProgramError(`${tool} is not a tool this program may call (see the tools tool)`, s.line)
       tools.add(tool)
     }
-    if (s.name !== undefined && (!IDENT.test(s.name) || env.hasVariable(s.name)))
-      throw new ProgramError(`"${s.name}" is already bound`, s.line)
+    if (s.name !== undefined) {
+      const kept = store.values.has(s.name) && !bound.has(s.name)
+      // A var may replace one an earlier program kept; any other name is bound once
+      if (!IDENT.test(s.name) || (env.hasVariable(s.name) && !(kept && s.kind === 'var')))
+        throw new ProgramError(
+          kept ? `"${s.name}" is a var from an earlier program; use another name, or \`var ${s.name} = ...\` to replace it` : `"${s.name}" is already bound`,
+          s.line,
+        )
+    }
     const source = desugar(s.source)
     const res = env.check(source)
-    if (!res.valid) throw new ProgramError(withHint(firstLine(res.error)), s.line)
+    if (!res.valid) throw new ProgramError(varsHint(withHint(firstLine(res.error)), store), s.line)
     let fn: (ctx: Record<string, unknown>) => unknown
     try {
       fn = env.parse(source) as unknown as typeof fn
     } catch (e) {
       throw new ProgramError(withHint(firstLine(e)), s.line)
     }
-    if (s.name !== undefined) env.registerVariable(s.name, String(res.type))
-    statements.push({ line: s.line, ...(s.name === undefined ? {} : { name: s.name }), fn })
+    if (s.name !== undefined) {
+      bound.add(s.name)
+      // A var is dyn, as it will be in later programs; a cleared one isn't bound at all
+      if (!env.hasVariable(s.name) && !clears(s)) env.registerVariable(s.name, s.kind === 'var' ? 'dyn' : String(res.type))
+    }
+    statements.push({ line: s.line, ...(s.name === undefined ? {} : { name: s.name, kind: s.kind! }), fn })
   }
+  checkVars(stmts, store)
   return { statements, tools: [...tools], run }
 }
 
@@ -334,6 +387,8 @@ export type RunResult = { ok: true; output: string; calls: number } | { ok: fals
 export interface RunOptions extends Limits {
   maxOutput: number // characters of the rendered result
   signal?: AbortSignal
+  /** The session's vars; without it a `var` is refused, as with a cap of 0. */
+  vars?: VarStore
   /** Asked once the program compiles, before its first call, with the tools it names:
    *  resolves to null to run it, or to why it may not run. */
   approve?: (tools: readonly string[]) => Promise<string | null>
@@ -350,7 +405,7 @@ export function truncate(text: string, max: number): string {
 export async function runProgram(text: string, scope: Scope, host: Host, opts: RunOptions): Promise<RunResult> {
   let compiled: Compiled
   try {
-    compiled = compileProgram(text, scope)
+    compiled = compileProgram(text, scope, opts.vars)
   } catch (e) {
     return { ok: false, error: e instanceof ProgramError ? e.message : `the program does not compile: ${firstLine(e)}`, calls: 0 }
   }
@@ -360,16 +415,28 @@ export async function runProgram(text: string, scope: Scope, host: Host, opts: R
   }
   const st = compiled.run
   Object.assign(st, { host, limits: { maxCalls: opts.maxCalls, concurrency: opts.concurrency }, signal: opts.signal, calls: 0 })
-  const vars: Record<string, unknown> = {}
+  const store = st.store
+  const vars: Record<string, unknown> = Object.fromEntries(store.values)
   let value: unknown
   for (const s of compiled.statements) {
     try {
       value = await s.fn(vars)
     } catch (e) {
-      const where = s.name === undefined ? `line ${s.line}` : `line ${s.line} (let ${s.name})`
+      const where = s.name === undefined ? `line ${s.line}` : `line ${s.line} (${s.kind} ${s.name})`
       return { ok: false, error: `${where}: ${withHint(firstLine(e))}`, calls: st.calls }
     }
-    if (s.name !== undefined) vars[s.name] = value
+    if (s.name === undefined) continue
+    if (s.kind === 'let') vars[s.name] = value
+    // A var is kept as soon as its line runs, so a later failure doesn't lose it; null clears it
+    else if (value === null) {
+      store.values.delete(s.name)
+      delete vars[s.name]
+    } else if (!store.values.has(s.name) && store.values.size >= store.max) {
+      return { ok: false, error: `line ${s.line} (var ${s.name}): more than ${store.max} vars would be kept; clear one with \`var <name> = null\``, calls: st.calls }
+    } else {
+      store.values.set(s.name, value)
+      vars[s.name] = value
+    }
   }
   return { ok: true, output: truncate(render(value), opts.maxOutput), calls: st.calls }
 }

@@ -33,6 +33,7 @@ let details = callEach("mcp__github__get_issue", top.map(i, {"owner": "o", "repo
 - `tryCall(tool, args)` returns `{ok, value, error}` and never stops the program.
 - `callEach(tool, [args, ...])` makes the calls in parallel and keeps their order.
 - Standard CEL (`filter`, `map`, `exists`, `all`, `has`, optional fields `x.?f.orValue(d)`, string functions), plus helpers for data work: `take`, `drop`, `reverse`, `sort`, `sortBy`, `distinct`, `flatten`, `groupBy`, `countBy`, `sum`, `min`, `max`, `keys`, `values`, `replace`, `find`, `findAll`, `lines`, `truncate`, `json`, `toJson`. `sortBy`, `groupBy` and `countBy` take a key per element (`xs.sortBy(x, -x.n)`) or a field name (`xs.sortBy("-n")`).
+- `var` in place of `let` keeps a value for the session's later programs, in memory: `var issues = call(...)` in one program, `issues.filter(...)` in the next, with no second call. Another `var issues = ...` line replaces it, `var issues = null` drops it, and `vars()` lists what is kept. A `let` lasts one program. A var is kept as soon as its line runs, so a later failure in the same program doesn't lose it. At most `max_vars` are kept at once; the session's end (and `/clear`, `/resume`) drops them all.
 - The whole program is parsed and type-checked before anything runs, so a typo costs no tool calls. Errors name the line, and the common mistakes get a hint.
 - Outputs that Claude Code would save to a file because they are too large come back whole inside the program.
 
@@ -64,6 +65,7 @@ This holds in every permission mode. It matters most in auto mode: Claude Code d
 | `max_calls` | 100 | Tool calls one program may make; the program is stopped past it. `callEach` is checked before it starts. |
 | `concurrency` | 8 | Calls `callEach` runs at once. |
 | `max_output` | 20000 | Characters of a result Claude reads; the rest is cut with a note. |
+| `max_vars` | 20 | `var` values kept for the session at once; a program that would keep more is stopped before it runs. 0 turns `var` off. |
 
 Set them in `/plugin`, or under `pluginConfigs` in your settings.
 
@@ -92,7 +94,7 @@ A stronger model writes the program right the first time more often. The error h
 - **Sandbox.** CEL has no I/O, no loops beyond list macros, and no access to the host beyond the functions this mod registers. Field access reads only a value's own fields (`x.__proto__` and `x.constructor` are missing keys), tool data is copied without prototypes, and parse limits cap a program's size and nesting.
 - **Same rules as Claude's own calls, plus approval.** Every call goes through `$.tool.call`: permission rules, managed and settings hooks, and every other mod's `tool.call` hooks. A call the rules would ask about runs only if you approved its tool for the program (see [Approval](#approval)); code-mode decides this itself in a `tool.check` hook, because Claude Code would otherwise let a plugin's call run unreviewed in auto mode. A program can't set the keys Claude Code reserves on a call (such as `consent`, which speaks for the user to the permission check).
 - **Scope.** By default only MCP tools and the read-only built-ins (Read, Glob, Grep, WebFetch, WebSearch) are callable. A tool named by a string literal is checked before the program runs; one named by a computed string, when it is called.
-- **Limits.** `max_calls` and `max_output` bound a run, and an interrupt stops a program before its next call.
+- **Limits.** `max_calls` and `max_output` bound a run, and an interrupt stops a program before its next call. `max_vars` bounds how many values programs keep in memory between runs (not their size).
 - **Spilled output.** A result Claude Code saved to a file is read back only from this session's `tool-results` folder under Claude Code's config dir, so a tool can't point code-mode at another file by returning text that looks like Claude Code's notice.
 
 Approving a tool for a program lets that program call it with any arguments, as many times as `max_calls` allows, including MCP tools that write (send a message, create an issue). Read the program in the transcript before you approve it, and keep `always_allow` to tools whose every call you would allow.

@@ -180,6 +180,19 @@ test('a custom scope and call budget', { options: { tools: '^mcp__t__get$', max_
   expect((await runText($, '[1, 2].map(n, call("mcp__t__get", {"number": n}).title)')).text).toBe('["issue 1","issue 2"]')
 })
 
+test('vars persist across programs, the model\'s and /code-mode\'s, up to max_vars', { options: { max_vars: 1 } }, async ($, on) => {
+  const seen: { tool: string; args: Record<string, unknown> }[] = []
+  stubEngine(on, seen)
+  on('session.end', () => ({ sessionId: 'sess-1' }))
+  expect((await runText($, 'var l = call("mcp__t__list", {})\nsize(l)')).text).toBe('12')
+  expect(await $.command.run({ command: 'code-mode', args: 'l.filter(i, i.state == "open").size()' } as any)).toMatchObject({ text: '6' })
+  expect((await runText($, 'var m = 1\nm')).text).toContain('more than 1 vars would be kept (kept now: l)')
+  expect(seen).toHaveLength(1)
+  // The session's end empties them
+  await $.session.end({ reason: 'clear' } as any)
+  expect((await runText($, 'l')).text).toContain('Unknown variable: l')
+})
+
 test('/code-mode runs a program by hand', async ($, on) => {
   stubEngine(on)
   expect(await $.command.run({ command: 'code-mode', args: 'size(call("mcp__t__list", {}))' } as any)).toMatchObject({ text: '12' })

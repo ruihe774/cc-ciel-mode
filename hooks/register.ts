@@ -4,7 +4,7 @@
 // through $.tool.call, so permission checks and other mods' hooks still apply.
 import { APPROVE, DECLINE, Pending, approvalQuestion, callKey, unapprovedReason } from './approval.ts'
 import { OWN_PREFIX, PLUGIN, alwaysOf, index, scopeOf, scopeText } from './catalog.ts'
-import { runProgram, type CallOutcome, type RunResult } from './program.ts'
+import { runProgram, type CallOutcome, type RunResult, type VarStore } from './program.ts'
 import { spilledFile, spilledText } from './spill.ts'
 
 const RUN = 'run'
@@ -16,7 +16,7 @@ const TOOLS = 'tools'
 export function runDescription(scope: string, maxOutput: number): string {
   return `Run a small program that calls tools and returns only its result, so big tool outputs never reach you. Prefer it to calling a tool directly when the output may be large (lists, search results, big JSON) and you need only part of it, when you would make many similar calls, or when you need to count, rank or join results. Do the whole job in one program when you can (fetch, filter, rank, fan out, aggregate) and return just the answer, a few hundred characters, not raw records.
 
-A program is sandboxed CEL: \`let <name> = <expression>\` lines, then a last expression, the result. CEL has no assignment, mutation or loops; build values with .map/.filter and the helpers. The \`program\` parameter's description has the full reference: read it before writing one.
+A program is sandboxed CEL: \`let <name> = <expression>\` lines, then a last expression, the result. \`var\` in place of \`let\` keeps a value for later programs (\`var x = null\` drops it). CEL has no assignment, mutation or loops; build values with .map/.filter and the helpers. The \`program\` parameter's description has the full reference: read it before writing one.
 
 - \`call("<tool>", {"arg": value})\` returns the tool's output as data (JSON parsed, else text; never content blocks or a "saved to a file" notice, whatever its size). A failed call stops the program.
 - \`tryCall("<tool>", {...})\` returns \`{"ok", "value", "error"}\` and never stops it.
@@ -33,6 +33,8 @@ Results over ${maxOutput} characters are cut.`
 
 /** The language reference, as the description of the `program` parameter. */
 export const PROGRAM_REFERENCE = `The program: \`let <name> = <expression>\` lines, then the result expression (a string as it is, anything else as compact JSON). An expression continues onto the next lines while a bracket is open or a line starts with \`.\` or an operator. \`//\` comments.
+
+\`var <name> = <expression>\` binds like \`let\` and also keeps the value for this session's later programs, which read it by name (as dyn) and can replace it with another \`var\` line. It is kept as soon as its line runs, even if a later line fails. Keep fetched data there to filter it again without calling the tool again. \`var <name> = null\` drops it; the number kept at once is capped. \`vars()\` lists the names kept.
 
 Recipes:
 - See an output's shape (don't call a big tool directly for that): \`call("<tool>", {...}).take(2)\`, \`call(...).keys()\` for a map, \`toJson(x).truncate(500)\`
@@ -56,6 +58,10 @@ details.map(d, {"n": d.number, "assignee": d.?assignee.?login.orValue("none")})`
 // whose `ask` becomes `allow`. code-mode's other calls (the approval dialog) aren't in them.
 const inFlight = new Pending()
 const approvedCalls = new Pending()
+
+// The session's vars, from `var` lines: in memory only, emptied when the session ends
+// (including /clear and /resume)
+const kept = new Map<string, unknown>()
 
 /** One tool call from a program, through every hook and the permission check. A call
  *  of an approved tool is marked, so tool.check lets it run. */
@@ -128,7 +134,8 @@ async function run($: any, program: unknown, options: Settings, signal: AbortSig
     return null
   }
   const host = { call: (tool: string, args: Record<string, unknown>) => callTool($, tool, args, approved.has(tool) || options.always(tool)) }
-  return runProgram(program, options.scope, host, { ...options, signal, approve })
+  const vars: VarStore = { values: kept, max: options.maxVars }
+  return runProgram(program, options.scope, host, { ...options, signal, approve, vars })
 }
 
 interface Settings {
@@ -139,6 +146,7 @@ interface Settings {
   maxCalls: number
   concurrency: number
   maxOutput: number
+  maxVars: number
 }
 
 const positive = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) && v >= 1 ? Math.floor(v) : fallback)
@@ -153,6 +161,7 @@ export function settings(options: Record<string, unknown> | undefined): Settings
     maxCalls: positive(options?.max_calls, 100),
     concurrency: positive(options?.concurrency, 8),
     maxOutput: positive(options?.max_output, 20000),
+    maxVars: typeof options?.max_vars === 'number' && Number.isFinite(options.max_vars) && options.max_vars >= 0 ? Math.floor(options.max_vars) : 20,
   }
 }
 
@@ -177,6 +186,11 @@ export function register(on: any, options?: Record<string, unknown>) {
       isDeferred: false,
     })
     await $.command.register({ name: PLUGIN, description: 'Run a code-mode program yourself: `let` lines, then the result expression', argumentHint: '<program>' })
+    return next(e)
+  })
+
+  on('session.end', async ($: any, e: any, next: any) => {
+    kept.clear()
     return next(e)
   })
 

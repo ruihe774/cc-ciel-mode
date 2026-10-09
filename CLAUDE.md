@@ -4,11 +4,11 @@ A Claude Mod (v2.1.287+) that adds Code Mode: Claude writes a small CEL program 
 
 ## Layout
 
-- `.claude-plugin/plugin.json`: manifest; `userConfig` holds `tools`, `always_allow`, `deny_direct`, `max_calls`, `concurrency`, `max_output`
+- `.claude-plugin/plugin.json`: manifest; `userConfig` holds `tools`, `always_allow`, `deny_direct`, `max_calls`, `concurrency`, `max_output`, `max_vars`
 - `hooks/hooks.json`: `modules` points to `./register.ts`
-- `hooks/register.ts`: the only file that touches `$`. Registers `mcp__code-mode__run`, `mcp__code-mode__tools` and `/code-mode`; the host that turns a program's calls into `$.tool.call`; the approval dialog and the `tool.check` hook that enforces it; the opt-in `deny_direct` hook
+- `hooks/register.ts`: the only file that touches `$`. Registers `mcp__code-mode__run`, `mcp__code-mode__tools` and `/code-mode`; the host that turns a program's calls into `$.tool.call`; the approval dialog and the `tool.check` hook that enforces it; the opt-in `deny_direct` hook; the session's `var` store (module state, emptied on `session.end`)
 - `hooks/approval.ts`: pure. Call keys, the pending-call multiset, the dialog text
-- `hooks/program.ts`: pure. Splits a program into statements, desugars the lambda helpers, type-checks the whole program, runs it against an injected `Host`
+- `hooks/program.ts`: pure. Splits a program into `let`/`var` statements and a result, desugars the lambda helpers, type-checks the whole program, runs it against an injected `Host`
 - `hooks/stdlib.ts`: pure. The CEL environment and helpers, JSON <-> CEL values
 - `hooks/catalog.ts`: pure. The scope (which tools a program may call) and the `tools` index
 - `hooks/spill.ts`: pure. Recognizes Claude Code's "output saved to a file" notices and checks the path
@@ -38,6 +38,7 @@ A Claude Mod (v2.1.287+) that adds Code Mode: Claude writes a small CEL program 
 - `$.ui.ask` shows the AskUserQuestion dialog; it rejects in `-p` and when dismissed. `classic.PreToolUse` fires for a plugin's call with the call's envelope (`tool`, arguments, `tool_use_id`), not the hook stdin JSON, so it carries no permission mode.
 - **A registered tool's description reaches the model only up to its first 2048 characters** (Claude Code logs `the description of run (N characters) reaches the model up to its first 2048`). A schema property's description is not cut: the CEL reference lives in the `program` parameter's description, and a model quoted its last line exactly.
 - `$.mcp.call(server, tool, args)` reaches any connected server with no permission prompt ("the plugin's call is the grant"), so it is not used: it would bypass permissions and other mods' `tool.call` hooks.
+- Module state lasts the session: a `var` kept by one `run` call is there for the next (checked with two `run` calls in one `claude -p`). Each `claude -p` is its own session, so `e2e/run.sh quick` can't test it. cel-js can't re-register a variable, so every var is bound as `dyn`, in its own program too.
 - cel-js awaits async function handlers, including inside `map`/`filter` macros (one at a time), so `call()` works anywhere in an expression. `callEach` is the parallel form.
 - CEL CPU cost is small: a filter and map over 10k issues takes about 20 ms, far under a hook's 10 s budget, and time inside `$.tool.call` doesn't count anyway.
 - Measuring (see README): the result's `num_turns` counts tool calls, not requests (40 parallel calls in one request are 40 turns), and `usage` sums every request. Most of each request is Claude Code's own prompt (about 18k tokens), so code-mode saves only when the data it keeps out would otherwise be read inline. Claude Code already keeps an over-limit output out (it saves it to a file), so a single huge output is not the case to test; many medium outputs are.

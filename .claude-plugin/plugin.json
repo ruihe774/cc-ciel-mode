@@ -56,6 +56,13 @@
       "description": "Characters of a program's result that Claude reads; the rest is cut with a note.",
       "default": 20000,
       "min": 100
+    },
+    "max_vars": {
+      "type": "number",
+      "title": "Kept vars",
+      "description": "How many `var` values programs may keep in memory for the session at once; `var name = null` frees one. 0 turns `var` off.",
+      "default": 20,
+      "min": 0
     }
   }
 }

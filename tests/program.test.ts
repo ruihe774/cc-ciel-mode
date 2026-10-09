@@ -245,3 +245,60 @@ test('a custom scope', async () => {
   // A broken pattern allows nothing
   expect((await runProgram('call("mcp__t__get", {"number": 1})', scopeOf('('), h.host, OPTS)).ok).toBe(false)
 })
+
+// ---- var: values kept across programs ----
+
+const store = (max = 3) => ({ values: new Map<string, unknown>(), max })
+
+test('a var outlives its program; a let does not', async () => {
+  const { host, calls } = fakeHost()
+  const vars = store()
+  const r1 = await run('var open = call("mcp__t__list", {"state": "open"})\nlet n = size(open)\nn', host, { vars })
+  expect(r1).toMatchObject({ ok: true, output: '26' })
+  expect([...vars.values.keys()]).toEqual(['open'])
+  // A later program reads it by name, with no tool call
+  expect(await run('open.filter(i, i.comments > 35).map(i, i.number)', host, { vars })).toMatchObject({ ok: true, output: '[38,39]' })
+  expect(calls).toHaveLength(1)
+  expect(await run('n', host, { vars })).toMatchObject({ ok: false, error: expect.stringContaining('vars kept from earlier programs: open') })
+  expect(await run('vars()', host, { vars })).toMatchObject({ output: '["open"]' })
+})
+
+test('a var is replaced by another var line, and cleared with null', async () => {
+  const vars = store()
+  await run('var a = 1\nvar b = [1, 2]\na', undefined, { vars })
+  expect(await run('var a = a + 41\na', undefined, { vars })).toMatchObject({ ok: true, output: '42' })
+  expect(await run('let a = 2\na', undefined, { vars })).toMatchObject({ ok: false, error: expect.stringContaining('"a" is a var from an earlier program') })
+  expect(await run('var b = null // done with it\nvars()', undefined, { vars })).toMatchObject({ ok: true, output: '["a"]' })
+  expect(await run('b', undefined, { vars })).toMatchObject({ ok: false, error: expect.stringContaining('Unknown variable: b') })
+  // A value that comes out null at run time clears it too
+  expect(await run('var a = json("null")\nvars()', undefined, { vars })).toMatchObject({ ok: true, output: '[]' })
+})
+
+test('a var name is bound once in a program', async () => {
+  const vars = store()
+  expect(await run('var a = 1\nvar a = 2\na', undefined, { vars })).toMatchObject({ ok: false, error: 'line 2: "a" is already bound' })
+  expect(await run('let a = 1\nvar a = 2\na', undefined, { vars })).toMatchObject({ ok: false, error: 'line 2: "a" is already bound' })
+  expect(() => parseProgram('var var = 1\n1')).toThrow('"var" is not a name')
+  expect(vars.values.size).toBe(0)
+})
+
+test('the number of vars is capped, checked before any call', async () => {
+  const { host, calls } = fakeHost()
+  const vars = store(2)
+  await run('var a = 1\nvar b = 2\n0', host, { vars })
+  const r = await run('let l = call("mcp__t__list", {})\nvar c = 3\nc', host, { vars })
+  expect(r).toMatchObject({ ok: false, error: expect.stringContaining('line 2: more than 2 vars would be kept (kept now: a, b)') })
+  expect(calls).toHaveLength(0)
+  // Clearing one first makes room, and replacing one needs none
+  expect(await run('var a = null\nvar c = 3\nvar b = 4\nb + c', host, { vars })).toMatchObject({ ok: true, output: '7' })
+  expect([...vars.values.keys()].sort()).toEqual(['b', 'c'])
+  // Without a store (or with a cap of 0) var is off
+  expect(await run('var a = 1\na')).toMatchObject({ ok: false, error: expect.stringContaining('var is turned off') })
+})
+
+test('a var is kept as soon as its line runs', async () => {
+  const vars = store()
+  const r = await run('var got = call("mcp__t__get", {"number": 3})\nlet bad = call("mcp__t__get", {"number": 99})\nbad', undefined, { vars })
+  expect(r.ok).toBe(false)
+  expect(await run('got.title', undefined, { vars })).toMatchObject({ ok: true, output: 'issue 3' })
+})
