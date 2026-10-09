@@ -19,6 +19,19 @@ export function scopeOf(pattern: string | undefined): Scope {
   return (tool) => !tool.startsWith(OWN_PREFIX) && re.test(tool)
 }
 
+/** The tools a program may call without asking the user (`always_allow`, a regex over
+ *  full tool names): none when it is empty or broken. */
+export function alwaysOf(pattern: string | undefined): (tool: string) => boolean {
+  const p = pattern?.trim()
+  if (!p) return () => false
+  try {
+    const re = new RegExp(p)
+    return (tool) => re.test(tool)
+  } catch {
+    return () => false
+  }
+}
+
 /** Plain-language list of what a scope covers, for the tool descriptions. */
 export function scopeText(pattern: string | undefined): string {
   const p = pattern?.trim()

@@ -4,9 +4,10 @@ A Claude Mod (v2.1.287+) that adds Code Mode: Claude writes a small CEL program 
 
 ## Layout
 
-- `.claude-plugin/plugin.json`: manifest; `userConfig` holds `tools`, `deny_direct`, `max_calls`, `concurrency`, `max_output`
+- `.claude-plugin/plugin.json`: manifest; `userConfig` holds `tools`, `always_allow`, `deny_direct`, `max_calls`, `concurrency`, `max_output`
 - `hooks/hooks.json`: `modules` points to `./register.ts`
-- `hooks/register.ts`: the only file that touches `$`. Registers `mcp__code-mode__run`, `mcp__code-mode__tools` and `/code-mode`; the host that turns a program's calls into `$.tool.call`; the opt-in `deny_direct` hook
+- `hooks/register.ts`: the only file that touches `$`. Registers `mcp__code-mode__run`, `mcp__code-mode__tools` and `/code-mode`; the host that turns a program's calls into `$.tool.call`; the approval dialog and the `tool.check` hook that enforces it; the opt-in `deny_direct` hook
+- `hooks/approval.ts`: pure. Call keys, the pending-call multiset, the dialog text
 - `hooks/program.ts`: pure. Splits a program into statements, desugars the lambda helpers, type-checks the whole program, runs it against an injected `Host`
 - `hooks/stdlib.ts`: pure. The CEL environment and helpers, JSON <-> CEL values
 - `hooks/catalog.ts`: pure. The scope (which tools a program may call) and the `tools` index
@@ -32,6 +33,10 @@ A Claude Mod (v2.1.287+) that adds Code Mode: Claude writes a small CEL program 
 - Mod-raised calls go through the permission check: in `-p` they are denied unless `--allowedTools` covers them. In a test, `--allowedTools 'mcp__mock__*' 'mcp__code-mode__*'`.
 - `next.origin` on a call this plugin raised is `{ plugin: 'code-mode', tier: 'user' }`; the model's own calls come from the engine. `deny_direct` tells them apart this way. `$.tool.call` "runs through every hook but the calling one", so this plugin's other hooks do see its calls.
 - Large outputs never reach `text`. Over the MCP token limit (about 131 KB here), `text` reads `result (N characters across …) exceeds maximum allowed tokens. Output has been saved to <path>.txt.` and the file holds the plain text. Over the inline size (about 81 KB here), `text` reads `<persisted-output>\nOutput too large (80.9KB). Full output saved to: <path>.json`, and the file holds the content blocks as JSON. Both paths are `<config dir>/projects/<project>/<session>/tool-results/<file>`. The host reads them back with `$.fs.read` (4 MiB max).
+- **Auto mode doesn't review a plugin's calls.** For a call raised with `$.tool.call`, `tool.check` decides `ask`, then the debug log says `Skipping auto mode classifier for Bash: called by plugin <name>` and the call runs. The same command from the model is blocked by the classifier. Hence the approval design: a program's `ask` becomes `allow` only for calls of tools approved before the run (or `always_allow`), matched by `callKey(tool, input)` in a `tool.check` hook (`e.input` equals the program's arguments), and `deny` otherwise. The hook acts only on calls a program has in flight: `$.ui.ask` is itself a `$.tool.call` of AskUserQuestion from this plugin, and denying it would kill the dialog.
+- `$.tool.check({ tool, input })` (a query) returns the rules' decision without running anything: no dialog, no classifier, no `PreToolUse` hook. In auto mode it returns `ask` where the classifier would decide; a Bash query returns `ask` even for `ls`. A content deny rule (`Bash(echo denied:*)`) still denies a program's call; `--disallowedTools X` instead removes X from the session (the call rejects: no tool named X).
+- `$.ui.ask` shows the AskUserQuestion dialog; it rejects in `-p` and when dismissed. `classic.PreToolUse` fires for a plugin's call with the call's envelope (`tool`, arguments, `tool_use_id`), not the hook stdin JSON, so it carries no permission mode.
+- **A registered tool's description reaches the model only up to its first 2048 characters** (Claude Code logs `the description of run (N characters) reaches the model up to its first 2048`). A schema property's description is not cut: the CEL reference lives in the `program` parameter's description, and a model quoted its last line exactly.
 - `$.mcp.call(server, tool, args)` reaches any connected server with no permission prompt ("the plugin's call is the grant"), so it is not used: it would bypass permissions and other mods' `tool.call` hooks.
 - cel-js awaits async function handlers, including inside `map`/`filter` macros (one at a time), so `call()` works anywhere in an expression. `callEach` is the parallel form.
 - CEL CPU cost is small: a filter and map over 10k issues takes about 20 ms, far under a hook's 10 s budget, and time inside `$.tool.call` doesn't count anyway.

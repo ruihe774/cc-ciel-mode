@@ -8,13 +8,27 @@
     "email": "ruihe774@outlook.com"
   },
   "license": "Unlicense AND MIT",
-  "keywords": ["code-mode", "mcp", "cel", "programmatic-tool-calling", "context", "sandbox", "mod"],
+  "keywords": [
+    "code-mode",
+    "mcp",
+    "cel",
+    "programmatic-tool-calling",
+    "context",
+    "sandbox",
+    "mod"
+  ],
   "userConfig": {
     "tools": {
       "type": "string",
       "title": "Callable tools",
       "description": "A regex over full tool names: the tools a program may call. Empty means the default, every MCP tool plus Read, Glob, Grep, WebFetch and WebSearch. code-mode's own tools are never callable.",
       "default": "^(mcp__.+|Read|Glob|Grep|WebFetch|WebSearch)$"
+    },
+    "always_allow": {
+      "type": "string",
+      "title": "Tools programs may call without asking",
+      "description": "A regex over full tool names. A program's call to a matching tool runs without the approval dialog even when your permission rules would ask about it. Empty (the default) means none: every such call needs your approval, given once per program before it runs.",
+      "default": ""
     },
     "deny_direct": {
       "type": "boolean",

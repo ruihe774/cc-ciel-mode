@@ -151,6 +151,20 @@ test('a tool named by a computed string is checked when it is called', async () 
   expect(h.calls).toHaveLength(0)
 })
 
+test('the tools a program names with literals are listed for approval, before any call', async () => {
+  expect(compileProgram('let a = call("mcp__t__list", {})\nlet b = callEach(\'mcp__t__get\', [])\ntryCall("mcp__t__list", {})', SCOPE).tools).toEqual(['mcp__t__list', 'mcp__t__get'])
+  const h = fakeHost()
+  const asked: (readonly string[])[] = []
+  const refused = await runProgram('call("mcp__t__list", {}).size()', SCOPE, h.host, {
+    ...OPTS,
+    approve: async (tools) => (asked.push(tools), 'the user declined to run this program'),
+  })
+  expect(refused).toEqual({ ok: false, error: 'the user declined to run this program', calls: 0 })
+  expect(asked).toEqual([['mcp__t__list']])
+  expect(h.calls).toHaveLength(0)
+  expect(await runProgram('call("mcp__t__list", {}).size()', SCOPE, h.host, { ...OPTS, approve: async () => null })).toEqual({ ok: true, output: '40', calls: 1 })
+})
+
 // ---- Running ----
 
 test('call returns data: JSON parsed, plain text as it is', async () => {

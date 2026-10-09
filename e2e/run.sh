@@ -16,6 +16,8 @@ mkdir -p "$T/work"
 printf '{"mcpServers":{"mock":{"command":"node","args":["%s/mock-mcp.mjs"]}}}\n' "$E2E" > "$T/mcp.json"
 DENY_DIRECT='{"pluginConfigs":{"code-mode@inline":{"options":{"deny_direct":true}}}}'
 MAX_CALLS_3='{"pluginConfigs":{"code-mode@inline":{"options":{"max_calls":3}}}}'
+ALWAYS_MOCK='{"pluginConfigs":{"code-mode@inline":{"options":{"always_allow":"^mcp__mock__"}}}}'
+WIDE='{"pluginConfigs":{"code-mode@inline":{"options":{"tools":".*"}}}}'
 fails=0
 
 # A child claude must not think it runs inside another session: drop CLAUDE* and AI_AGENT
@@ -88,8 +90,23 @@ expect "a failed call stops the program and names the statement" toolerr 'Error:
 run scope '/code-mode call("Bash", {"command": "echo hacked"})' "${ALLOW[@]}"
 expect "a tool outside the scope is refused before anything runs" scope 'Error: line 1: Bash is not a tool this program may call'
 
-run perm '/code-mode call("mcp__mock__stats")' --allowedTools 'mcp__code-mode__*'
-expect "a program's calls go through the permission check" perm 'refused: .*permission'
+run perm '/code-mode call("Bash", {"command": "echo denied"})' --allowedTools 'mcp__code-mode__*' \
+  --settings '{"permissions":{"deny":["Bash(echo denied:*)"]},"pluginConfigs":{"code-mode@inline":{"options":{"tools":".*"}}}}'
+expect "a program's calls go through the permission rules: a deny rule holds, approved or not" perm 'refused: '
+
+run typed '/code-mode call("mcp__mock__stats")' --allowedTools 'mcp__code-mode__*'
+expect "a program typed with /code-mode counts as approved for the tools it names" typed '\{"total":300,"open":176\}'
+
+run computed '/code-mode let t = "mcp__mock__" + "stats"
+call(t)' --allowedTools 'mcp__code-mode__*'
+expect "a tool named by a computed string that needs approval is refused" computed 'mcp__mock__stats needs approval, and a running program'
+
+# In auto mode Claude Code skips its classifier for a plugin's calls; code-mode must not let them through
+rm -rf "$T/auto" && mkdir -p "$T/auto"
+run auto "/code-mode let b = \"Ba\" + \"sh\"
+call(b, {\"command\": \"echo x > $T/auto/written\"})" --permission-mode auto --settings "$WIDE"
+expect "auto mode: an unapproved Bash call from a program is refused" auto 'Bash needs approval'
+if [ -e "$T/auto/written" ]; then echo "FAIL: auto mode: the refused command ran"; fails=$((fails + 1)); else echo "pass: auto mode: the refused command did not run"; fi
 
 run budget '/code-mode [1, 2, 3, 4].map(n, call("mcp__mock__get_issue", {"number": n}).title)' "${ALLOW[@]}" --settings "$MAX_CALLS_3"
 expect "max_calls stops a program" budget 'more than 3 tool calls in one run'
@@ -100,6 +117,12 @@ expect "a program cannot speak for the user to the permission check" reserved 'c
 [ "${1:-}" = quick ] && { echo "$fails failed"; [ "$fails" = 0 ]; exit; }
 
 echo "== model: $MODEL"
+run noapprove 'Make exactly one tool call: mcp__code-mode__run with program call("mcp__mock__stats"). Then quote its result verbatim.' --allowedTools 'mcp__code-mode__run'
+expect_tool "a model's program that needs approval is refused when no one can approve it" noapprove "the user's approval is needed to call mcp__mock__stats"
+
+run always 'Make exactly one tool call: mcp__code-mode__run with program call("mcp__mock__stats"). Then quote its result verbatim.' --allowedTools 'mcp__code-mode__run' --settings "$ALWAYS_MOCK"
+expect_tool "always_allow lets a program call the tool without approval" always '"total":300'
+
 run tools 'Call the mcp__code-mode__tools tool with no arguments and quote its output verbatim.' "${ALLOW[@]}"
 expect_tool "the tools tool lists callable tools, one line each" tools 'mcp__mock__list_issues: List issues in the tracker\.\n'
 

@@ -6,7 +6,12 @@ const ISSUES = Array.from({ length: 12 }, (_, i) => ({ number: i + 1, state: i %
 const SPILL_DIR = '/home/u/.claude/projects/-proj/sess-1/tool-results'
 
 // Stubs Claude Code beneath the mod: the tools a program calls, and what they answer
-function stubEngine(on: any, seen: { tool: string; args: Record<string, unknown> }[] = [], files: Record<string, string> = {}) {
+function stubEngine(
+  on: any,
+  seen: { tool: string; args: Record<string, unknown> }[] = [],
+  files: Record<string, string> = {},
+  { checks = {} as Record<string, string>, answer = undefined as string | undefined, asked = [] as string[] } = {},
+) {
   mock.env(on, { HOME: '/home/u' })
   on('session.id', () => ({ value: 'sess-1' }))
   on('fs.read', (_$: any, e: any) => (e.path in files ? { value: files[e.path] } : { deny: `ENOENT: ${e.path}` }))
@@ -19,7 +24,13 @@ function stubEngine(on: any, seen: { tool: string; args: Record<string, unknown>
       { name: 'mcp__code-mode__run', description: 'Run a program', mcp: true },
     ],
   }))
+  // The permission rules allow the mock's tools, unless a test says otherwise
+  on('tool.check', (_$: any, e: any) => ({ decision: checks[e.tool] ?? 'allow' }))
   on('tool.call', (_$: any, e: any) => {
+    if (e.tool === 'AskUserQuestion') {
+      asked.push(e.questions[0].question)
+      return answer === undefined ? { deny: 'dismissed' } : { result: { answers: { [e.questions[0].question]: answer } } }
+    }
     const { tool, tool_use_id: _, ...args } = e
     seen.push({ tool, args })
     if (tool === 'mcp__t__list') return { result: 'x', text: JSON.stringify(ISSUES) }
@@ -58,6 +69,9 @@ test('session start registers the run and tools tools and the command', async ($
   expect(registered.every((t) => t.isDeferred === false)).toBe(true)
   expect(registered[0].description).toContain('MCP tools, and Read, Glob, Grep, WebFetch and WebSearch')
   expect(registered[0].description).toContain('ToolSearch')
+  // Claude Code passes a description on up to its first 2048 characters; the reference rides on the parameter
+  expect(registered[0].description.length).toBeLessThanOrEqual(2048)
+  expect(registered[0].inputSchema.properties.program.description).toContain('CEL reference:')
   expect(registered[0].inputSchema.required).toEqual(['program'])
   expect(commands).toEqual(['code-mode'])
 })
@@ -94,6 +108,40 @@ test('output Claude Code saved to a file is read back from it', async ($, on) =>
   expect((await runText($, 'call("mcp__t__big2", {}).map(x, x.n)')).text).toBe('[7]')
   // A notice naming a file outside Claude Code's tool-results folders is left as text
   expect((await runText($, 'call("mcp__t__forged", {})')).text).toStartWith('result (9 characters)')
+})
+
+test('tools that need approval are approved in one dialog before the program runs', async ($, on) => {
+  const seen: { tool: string; args: Record<string, unknown> }[] = []
+  const asked: string[] = []
+  stubEngine(on, seen, {}, { checks: { mcp__t__get: 'ask', mcp__t__list: 'ask' }, answer: 'Run the program', asked })
+  const r = await runText($, 'let l = call("mcp__t__list", {})\ncall("mcp__t__get", {"number": size(l)}).title')
+  expect(r).toEqual({ text: 'issue 12', isError: false })
+  expect(asked).toHaveLength(1)
+  expect(asked[0]).toContain('these tools, which need your approval: mcp__t__list, mcp__t__get.')
+})
+
+test('a declined or dismissed approval runs nothing', async ($, on) => {
+  const seen: { tool: string; args: Record<string, unknown> }[] = []
+  stubEngine(on, seen, {}, { checks: { mcp__t__get: 'ask' }, answer: "Don't run it" })
+  expect(await runText($, 'call("mcp__t__get", {"number": 1}).title')).toEqual({ text: 'Error: the user declined to run this program', isError: true })
+  expect(seen).toHaveLength(0)
+})
+
+test('no dialog when the rules allow, or for a typed /code-mode program', async ($, on) => {
+  const asked: string[] = []
+  stubEngine(on, [], {}, { checks: { mcp__t__get: 'ask' }, asked })
+  expect((await runText($, 'call("mcp__t__list", {}).size()')).text).toBe('12')
+  expect(await $.command.run({ command: 'code-mode', args: 'call("mcp__t__get", {"number": 2}).title' } as any)).toMatchObject({ text: 'issue 2' })
+  expect(asked).toHaveLength(0)
+  // With no one to answer, a model's program that needs approval is refused
+  expect((await runText($, 'call("mcp__t__get", {"number": 2}).title')).text).toContain("the user's approval is needed to call mcp__t__get")
+})
+
+test('always_allow skips the dialog', { options: { always_allow: '^mcp__t__' } }, async ($, on) => {
+  const asked: string[] = []
+  stubEngine(on, [], {}, { checks: { mcp__t__get: 'ask' }, asked })
+  expect((await runText($, 'call("mcp__t__get", {"number": 3}).title')).text).toBe('issue 3')
+  expect(asked).toHaveLength(0)
 })
 
 test('the tools tool lists callable tools, one line each', async ($, on) => {

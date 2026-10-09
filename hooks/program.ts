@@ -179,6 +179,7 @@ export type Scope = (tool: string) => boolean
 
 export interface Compiled {
   statements: readonly { line: number; name?: string; fn: (ctx: Record<string, unknown>) => unknown }[]
+  tools: readonly string[] // the tools the program names with string literals, in order
   run: RunState // the state the host functions read, reset by each run
 }
 
@@ -302,10 +303,12 @@ export function compileProgram(text: string, scope: Scope): Compiled {
   const run: RunState = { calls: 0 }
   const env = programEnv(run, scope)
   const statements: Compiled['statements'][number][] = []
+  const tools = new Set<string>()
   for (const s of stmts) {
     for (const m of s.source.matchAll(LITERAL_TOOL)) {
       const tool = m[1] ?? m[2]!
       if (!scope(tool)) throw new ProgramError(`${tool} is not a tool this program may call (see the tools tool)`, s.line)
+      tools.add(tool)
     }
     if (s.name !== undefined && (!IDENT.test(s.name) || env.hasVariable(s.name)))
       throw new ProgramError(`"${s.name}" is already bound`, s.line)
@@ -321,7 +324,7 @@ export function compileProgram(text: string, scope: Scope): Compiled {
     if (s.name !== undefined) env.registerVariable(s.name, String(res.type))
     statements.push({ line: s.line, ...(s.name === undefined ? {} : { name: s.name }), fn })
   }
-  return { statements, run }
+  return { statements, tools: [...tools], run }
 }
 
 // ---- Running ----
@@ -331,6 +334,9 @@ export type RunResult = { ok: true; output: string; calls: number } | { ok: fals
 export interface RunOptions extends Limits {
   maxOutput: number // characters of the rendered result
   signal?: AbortSignal
+  /** Asked once the program compiles, before its first call, with the tools it names:
+   *  resolves to null to run it, or to why it may not run. */
+  approve?: (tools: readonly string[]) => Promise<string | null>
 }
 
 /** Cuts a result to `max` characters, saying how much was left out. */
@@ -347,6 +353,10 @@ export async function runProgram(text: string, scope: Scope, host: Host, opts: R
     compiled = compileProgram(text, scope)
   } catch (e) {
     return { ok: false, error: e instanceof ProgramError ? e.message : `the program does not compile: ${firstLine(e)}`, calls: 0 }
+  }
+  if (opts.approve) {
+    const refused = await opts.approve(compiled.tools)
+    if (refused !== null) return { ok: false, error: refused, calls: 0 }
   }
   const st = compiled.run
   Object.assign(st, { host, limits: { maxCalls: opts.maxCalls, concurrency: opts.concurrency }, signal: opts.signal, calls: 0 })
